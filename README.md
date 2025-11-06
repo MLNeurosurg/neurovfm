@@ -11,7 +11,7 @@ The NeuroVFM stack includes:
 - **3D ViT encoder**, general-purpose representations for *any* clinical neuroimage (T1, T2, FLAIR, DWI, CT, etc.)
 - **Study-level diagnostic heads**, covering **74 MRI**/**82 CT** expert-defined diagnoses for *any* neuroimaging study
 - **Findings LLM**, generates preliminary findings given *any* neuroimaging study plus clinical context
-- **Interpretation**, pass outputs to a frontier reasoning model for higher-level tasks (e.g., triage)
+- **Reasoning API**, pass outputs to a frontier reasoning model for higher-level tasks (e.g., triage)
 
 > **Research use only.** Not a medical device. Do not use for clinical decision-making.
 
@@ -26,8 +26,9 @@ dx_head = load_diagnostic_head("neurovfm-dx-ct")
 llm = load_llm("neurovfm-llm")
 
 vols = preproc.load_study("/path/to/study/")             # study directory with 1+ DICOM/NIfTI files   
-embs = encoder.embed(vols)                               # series-wise embeddings                           
-dx = dx_head.predict_proba(embs, top_k=3)                    
+embs = encoder.embed(vols)                               # series-wise embeddings   
+
+dx = dx_head.predict_proba(embs, top_k=3)     
 report = llm.generate_findings(
     embs,
     clinical_context="32M with sudden, severe 'worst headache of life'.",
