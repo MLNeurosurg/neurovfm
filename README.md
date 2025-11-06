@@ -14,10 +14,32 @@ The NeuroVFM stack includes:
 
 > **Research use only.** Not a medical device. Do not use for clinical decision-making.
 
-## Why NeuroVFM?
+## 🔎 TL;DR (what NeuroVFM gives you)
 
-- **Health system-scale learning**: 
-- **Single backbone, many tasks**: 
-- **Robust to modality, protocol, vendor, and site effects**:
-- **Flexible findings generation**:
-- **Open weights and tooling**: 
+```python
+from neurovfm import load_encoder, load_diagnostic_head, load_llm
+
+encoder, preproc = load_encoder("neurovfm-encoder")
+dx_head = load_diagnostic_head("neurovfm-dx-mri")
+findings_llm = load_llm("neurovfm-llm")
+
+vol = preproc.load_study("/path/to/study/")         # study directory with 1+ DICOM/NIfTI files
+emb = encoder.embed(vol)                            # series-wise embeddings
+dx = dx_head.predict_proba(emb, top_k=3)            # top-3 diagnoses
+report = findings_llm.generate_findings(
+    emb,
+    clinical_context="72F with acute right-sided weakness and aphasia",
+)
+```
+
+```console
+Top-3 MRI diagnoses
+1. acute_ischemic_stroke               p=0.94
+2. small_vessel_ischemic_disease       p=0.73
+3. cerebral_atrophy                    p=0.67
+
+Generated findings (excerpt)
+Acute left MCA territory infarct with diffusion restriction in the left frontal,
+insular, and parietal cortex with corresponding ADC hypointensity. No hemorrhagic
+transformation. Chronic small vessel ischemic changes are present...
+```
