@@ -1,0 +1,15 @@
+env/
+logs/
+model/
+__pycache__/
+*.egg-info/
+out/
+.vscode/
+slurm*.out
+.DS_Store
+*.pt
+*.npy
+*.npz
+.ipynb_checkpoints
+lightning_logs/
+*bak

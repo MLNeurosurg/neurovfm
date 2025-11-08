@@ -1,0 +1,160 @@
+# Example configuration for self-supervised pretraining
+# Vision-JEPA style masked prediction
+
+# Infrastructure settings
+infra:
+  exp_root: /path/to/experiments/pretraining_run1
+  seed: 42
+  num_gpus: 4
+  num_nodes: 1
+  log_gpu: false
+  log_every_n_steps: 250
+  wandb_project: neurovfm_pretraining
+  comment: vit_base_jepa
+
+# Data configuration
+data:
+  raw_data_dir: /path/to/raw_data
+  cache_dir: /path/to/preprocessed_cache
+  
+  # Explicit modality mapping (study_name -> modality)
+  mode_mapping:
+    study_001: mri
+    study_002: ct
+    study_003: mri
+    # ... add all studies
+  
+  # Dataset configuration
+  dataset:
+    train:
+      studies:
+        - study_001
+        - study_002
+        # ... list training studies
+      params:
+        random_crop: true
+        max_crop_size: [64, 192, 192]  # D, H, W in tokens
+        augment: true
+        tokenize: true
+        ct_window_probs: [0.7, 0.15, 0.15]  # brain, blood, bone
+    
+    val:
+      studies:
+        - study_003
+        # ... list validation studies
+      params:
+        random_crop: false
+        augment: false
+        tokenize: true
+        ct_window_probs: [0.7, 0.15, 0.15]
+  
+  # DataLoader configuration
+  loader:
+    train:
+      batch_size: 8
+      num_workers: 8
+      shuffle: true
+      drop_last: true
+      use_study_sampler: true  # Use StudyAwareBatchSampler
+      collate_fn:
+        remove_background: true
+        patch_drop_rate: 0.1
+        apply_masks_internally: false
+    
+    val:
+      batch_size: 8
+      num_workers: 8
+      shuffle: false
+      drop_last: false
+      use_study_sampler: true
+      collate_fn:
+        remove_background: true
+        patch_drop_rate: 0.0
+        apply_masks_internally: false
+
+# System configuration
+system:
+  which: VisionPretrainingSystem
+  params:
+    # Vision backbone
+    vision_backbone_cf:
+      which: vit_base
+      params:
+        token_dim: 1024  # 1*4*16*16
+        embed_layer_cf:
+          which: voxel
+          params:
+            patch_hw_size: 16
+            patch_d_size: 4
+            in_chans: 1
+            embed_dim: 768
+        pos_emb_cf:
+          which: pe3d
+          params:
+            d: 30
+            d_size: 128
+            hw_size: 192
+            concat: true
+    
+    # Predictor
+    predictor_cf:
+      dim: 512
+      depth: 4
+      dim_head: 64
+      num_heads: 8
+      prefix_len: 0
+    
+    # Projection heads
+    proj_params:
+      mim:
+        out_dim: 8192
+        hidden_dim: 2048
+        bottleneck_dim: 256
+        nlayers: 3
+        use_bn: false
+    
+    # EMA momentum
+    ema_beta: [0.996, 1.0]
+    
+    # Loss configuration
+    loss_cf:
+      which: jepa
+      params:
+        lambda: 1.0
+    
+    # Optimizer
+    opt_cf:
+      which: adamw
+      params:
+        lr: 1.5e-4
+        weight_decay: 0.05
+        betas: [0.9, 0.95]
+    
+    # Scheduler
+    schd_cf:
+      which: cosine
+      params:
+        ipe_scale: 1.0
+        warmup_epochs: 10
+        min_lr: 1e-6
+    
+    # Normalization stats (optional, defaults will be used if not specified)
+    # normalization_stats_list:
+    #   - [0.3141, 0.4139, 0.3184, 0.2719]  # means: mri, brain, blood, bone
+    #   - [0.2623, 0.4059, 0.3605, 0.1875]  # stds: mri, brain, blood, bone
+
+# Training configuration
+training:
+  trainer_params:
+    max_epochs: 100
+    gradient_clip_val: 1.0
+    accumulate_grad_batches: 1
+    precision: bf16-mixed
+  
+  monitor_metric: val/loss_epoch
+  monitor_mode: min
+  checkpoint_every_n_epochs: 10
+  
+  # Optional: resume from checkpoint
+  # resume_checkpoint: /path/to/checkpoint.ckpt
+

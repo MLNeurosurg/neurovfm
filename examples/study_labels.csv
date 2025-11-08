@@ -1,0 +1,7 @@
+study_id,hemorrhage,fracture,mass
+patient_001,1,0,1
+patient_002,0,1,0
+patient_003,1,1,0
+patient_004,0,0,1
+patient_005,1,0,0
+
