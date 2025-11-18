@@ -1,6 +1,6 @@
 # NeuroVFM
 
-## Health system–scale learning achieves generalist neuroimaging models
+## Health system learning achieves generalist neuroimaging models
 
 [Preprint](https://neurovfm.mlins.org) / [Interactive Demo](https://neurovfm.mlins.org) / [Models](https://huggingface.co/collections/mlinslab/neurovfm) / [MLiNS Lab](https://mlins.org)
 
