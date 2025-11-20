@@ -1,6 +1,6 @@
-# Medical Image Data Pipeline
+# Neuroimaging Data Pipeline
 
-Load and preprocess medical images (NIfTI, DICOM) for inference and training.
+Load and preprocess neuroimages (NIfTI, DICOM) for inference and training.
 
 ## Quick Start
 
@@ -57,8 +57,8 @@ dataset = ImageDataset('/data', use_cache=True)
 loader = DataLoader(dataset, batch_size=4, shuffle=True)
 
 for batch in loader:
-    images = batch['image']  # [B, C, D, H, W]
-    # Train model
+    img = batch['img']  # [B, N, 1024] tokenized patches
+    # Train model on token sequences
 ```
 
 ## Directory Structure
@@ -90,9 +90,9 @@ for batch in loader:
 - **N**: Number of tokens (depth×height×width in token space)
 - **D**: 1024 = 4 (slice) × 16 × 16 (in-plane) patch size
 
-**Original format** (if `return_tokenized=False`):
+**Volume format** (when working directly with arrays from `load_image` / `prepare_for_inference` or `CacheManager.load_image`):
 - **MRI**: `[1, D, H, W]` - single channel, normalized [0,1]
-- **CT**: `[1, D, H, W]` - randomly sampled window, normalized [0,1]
+- **CT**: `[1, D, H, W]` - a single CT window view, normalized [0,1]
 
 **Mask**: `[N]` - uint8, 1=background, 0=foreground (per token)
 
@@ -220,7 +220,6 @@ for batch in loader:
 - **Images**: Stored as uint8 [0-255] for space efficiency (~4x smaller than float32)
 - **Masks**: Stored as uint8 binary (1=background, 0=foreground)
 - **Loading**: Auto-converted to float32 [0,1] when loaded
-- **Size**: ~3-15MB per image (compressed), ~10-50MB uncompressed
 
 ## Tips
 
@@ -318,32 +317,3 @@ print(batch['study'])  # Returns study name
 - Multiclass: Single integer (0, 1, 2, ...) per study
 
 See `neurovfm/datasets/` for DataModule integration.
-
-## Troubleshooting
-
-**"Metadata file not found"**  
-→ Create metadata first: `DatasetMetadata.from_directory(...)`
-
-**"Image too small"**  
-→ Minimum dimensions: D≥4, H≥16, W≥16
-
-**Cache not being used**  
-→ Check `cache.get_cache_stats()` and rebuild if needed
-
-**"einops" import error**  
-→ Install: `pip install einops`
-
-**"Study not in labels"**  
-→ Add study to labels CSV or leave blank for pretraining
-
----
-
-## Key Design Choices
-
-✅ **Single Dataset Class**: ImageDataset handles all cases  
-✅ **Batch Sampler**: StudyAwareBatchSampler for study-level batching  
-✅ **Tokenization**: 4×16×16 patches = 1024-D tokens  
-✅ **Augmentation**: Random crop + spatial transforms built-in  
-✅ **CT Windows**: Separate images, not stacked channels  
-
-**Note**: Datasets are in `neurovfm.datasets`, not `neurovfm.data`
