@@ -19,6 +19,7 @@ import torch
 from torch import nn
 from torch.nn.init import trunc_normal_
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 
 from positional_encodings.torch_encodings import PositionalEncoding3D
 
@@ -93,7 +94,7 @@ class PositionalEncoding3DWrapper(nn.Module):
 
         # Flatten 3D coordinates to 1D index
         tocatid = coords[:, :, 0] * (self.hw_size**2) + coords[:, :, 1] * self.hw_size + coords[:, :, 2]
-        
+
         # Index directly on GPU
         tocat = self.p_enc[tocatid]
         

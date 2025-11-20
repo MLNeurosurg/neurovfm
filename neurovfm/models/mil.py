@@ -5,8 +5,8 @@ Aggregates variable-length sequences of patch embeddings into fixed-size represe
 using attention-based pooling mechanisms.
 
 Classes:
-    - ABMIL: Attention-Based MIL with gated attention
-    - AdditiveMIL: Additive MIL combining attention pooling with patch-level predictions
+    - AggregateThenClassify: Attention-based MIL with gated attention
+    - ClassifyThenAggregate: MIL combining attention pooling with patch-level predictions
 """
 
 from functools import partial
@@ -72,7 +72,7 @@ def pad_ragged(
     return padded, mask
 
 
-class ABMIL(nn.Module):
+class AggregateThenClassify(nn.Module):
     """
     Attention-Based Multiple Instance Learning (AB-MIL).
     
@@ -92,10 +92,10 @@ class ABMIL(nn.Module):
     
     Example:
         >>> import torch
-        >>> from neurovfm.models import ABMIL
+        >>> from neurovfm.models import AggregateThenClassify
         >>> 
-        >>> # Create AB-MIL pooling
-        >>> mil = ABMIL(dim=768, hidden_dim=512, W_out=1)
+        >>> # Create Aggregate-Then-Classify pooling
+        >>> mil = AggregateThenClassify(dim=768, hidden_dim=512, W_out=1)
         >>> 
         >>> # Variable-length batch with 3 sequences
         >>> features = torch.randn(50, 768)  # 50 total tokens
@@ -183,7 +183,7 @@ class ABMIL(nn.Module):
 
         media_attn = self.dropout(media_attn)
         
-        # AB-MIL attention mechanism
+        # Attention mechanism
         attention_features = torch.tanh(self.attention_V(media_attn))
         if self.gating_V is not None:
             gating_features = torch.sigmoid(self.gating_V(media_attn))
@@ -279,9 +279,9 @@ class ABMIL(nn.Module):
             return output
 
 
-class AdditiveMIL(nn.Module):
+class ClassifyThenAggregate(nn.Module):
     """
-    Additive Multiple Instance Learning (Additive MIL).
+    Classify-Then-Aggregate Multiple Instance Learning.
     
     Combines attention-weighted pooling with patch-level predictions. The final
     bag-level prediction is the attention-weighted sum of patch predictions.
@@ -303,10 +303,10 @@ class AdditiveMIL(nn.Module):
     
     Example:
         >>> import torch
-        >>> from neurovfm.models import AdditiveMIL
+        >>> from neurovfm.models import ClassifyThenAggregate
         >>> 
-        >>> # Create Additive MIL for classification
-        >>> mil = AdditiveMIL(
+        >>> # Create Classify-Then-Aggregate MIL for classification
+        >>> mil = ClassifyThenAggregate(
         ...     dim=768,
         ...     W_out=2,
         ...     mlp_hidden_dims=[512, 256]

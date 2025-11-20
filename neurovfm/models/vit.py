@@ -8,15 +8,15 @@ import re
 from collections import OrderedDict
 from copy import deepcopy
 from functools import partial
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from timm.models.helpers import named_apply
 from torch.nn.init import trunc_normal_
 from torchvision.ops import StochasticDepth
+from torch.utils.checkpoint import checkpoint
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 
 from flash_attn import flash_attn_qkvpacked_func, flash_attn_varlen_qkvpacked_func, flash_attn_varlen_kvpacked_func
@@ -967,7 +967,7 @@ class VisionTransformer(TransformerEncoder):
         ...             'patch_hw_size': 16,
         ...             'patch_d_size': 4,
         ...             'in_chans': 1,
-        ...             'embed_dim': 768
+        ...             'embed_dim': 738
         ...         }
         ...     }
         ... )

@@ -24,8 +24,8 @@ from .pos_embed import PositionalEncoding3DWrapper
 
 # Multiple Instance Learning Pooling
 from .mil import (
-    ABMIL,
-    AdditiveMIL,
+    AggregateThenClassify,
+    ClassifyThenAggregate,
 )
 
 # Projection Heads and MLPs
@@ -49,8 +49,8 @@ __all__ = [
     # Positional Encodings
     "PositionalEncoding3DWrapper",
     # MIL
-    "ABMIL",
-    "AdditiveMIL",
+    "AggregateThenClassify",
+    "ClassifyThenAggregate",
     # Projectors
     "MLP",
     "CSyncBatchNorm",
