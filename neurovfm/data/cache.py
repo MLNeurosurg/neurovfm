@@ -31,6 +31,20 @@ from .preprocess import prepare_for_inference
 from .metadata import DatasetMetadata
 
 
+def _safe_load(path):
+    """
+    Load .pt files safely:
+    - Explicitly set weights_only=False to preserve dict structure in cached data
+      and future-proof behavior when the default flips to True.
+    - Always load to CPU to avoid device dependencies
+    """
+    try:
+        return torch.load(path, map_location='cpu', weights_only=False)
+    except TypeError:
+        # Older Torch without weights_only kwarg
+        return torch.load(path, map_location='cpu')
+
+
 class CacheManager:
     """
     Manages preprocessing cache for medical image datasets.
@@ -322,7 +336,7 @@ class CacheManager:
         mask_path = processed_study_dir / f"{image_name}_mask.pt"
         if not mask_path.exists():
             return None
-        mask = torch.load(mask_path)
+        mask = _safe_load(mask_path)
         
         if mode == 'ct':
             if window is not None:
@@ -330,7 +344,7 @@ class CacheManager:
                 cache_path = processed_study_dir / f"{image_name}_{window}.pt"
                 if not cache_path.exists():
                     return None
-                data = torch.load(cache_path)
+                data = _safe_load(cache_path)
                 # Convert uint8 [0,255] back to float32 [0,1]
                 data['data'] = data['data'].float() / 255.0
                 data['mask'] = mask
@@ -343,7 +357,7 @@ class CacheManager:
                     cache_path = processed_study_dir / f"{image_name}_{w}.pt"
                     if not cache_path.exists():
                         return None
-                    data = torch.load(cache_path)
+                    data = _safe_load(cache_path)
                     # Convert uint8 [0,255] back to float32 [0,1]
                     data['data'] = data['data'].float() / 255.0
                     data['mask'] = mask
@@ -354,7 +368,7 @@ class CacheManager:
             cache_path = processed_study_dir / f"{image_name}.pt"
             if not cache_path.exists():
                 return None
-            data = torch.load(cache_path)
+            data = _safe_load(cache_path)
             # Convert uint8 [0,255] back to float32 [0,1]
             data['data'] = data['data'].float() / 255.0
             data['mask'] = mask

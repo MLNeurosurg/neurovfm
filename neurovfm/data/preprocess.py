@@ -231,7 +231,10 @@ def prepare_for_inference(img_sitk, mode, z_dim=None):
     # Infer z_dim from spacing if not provided
     if z_dim is None:
         spacing = img_sitk.GetSpacing()
-        z_dim = np.argmax(spacing)  # Dimension with largest spacing (4mm)
+        if np.unique(spacing).shape[0] == 1:
+            z_dim = 2 # assume axial
+        else:
+            z_dim = np.argmax(spacing)  # Dimension with largest spacing (4mm)
     
     # Convert SimpleITK image to numpy array
     # GetArrayFromImage returns (z, y, x) order

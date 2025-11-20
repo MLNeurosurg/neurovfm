@@ -258,6 +258,12 @@ class ImageDataset(Dataset):
         mask = data['mask']  # [D, H, W] uint8, 1=bg, 0=fg
         view = data['view']
         
+        # Normalize types: downstream uses torch.from_numpy(...), so ensure numpy arrays here
+        if isinstance(img, torch.Tensor):
+            img = img.detach().cpu().numpy()
+        if isinstance(mask, torch.Tensor):
+            mask = mask.detach().cpu().numpy()
+                  
         # Get study-level label (all images from same study share this label)
         if study_name in self.study_labels:
             label = self.study_labels[study_name]
@@ -470,7 +476,7 @@ class ImageDataset(Dataset):
             if mode == 'ct':
                 return self.cache_mgr.load_image(study_name, image_name, window=window)
             else:
-            return self.cache_mgr.load_image(study_name, image_name)
+                return self.cache_mgr.load_image(study_name, image_name)
         except Exception as e:
             logging.warning(f"Cache load error for {study_name}/{image_name}: {e}")
             return None

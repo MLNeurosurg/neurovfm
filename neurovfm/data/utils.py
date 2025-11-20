@@ -184,8 +184,8 @@ def preprocess_image(img_sitk):
     # Determine slice dimension (z_dim) using heuristics
     # This identifies which dimension represents the slice/through-plane axis
     if len(set(list(original_spacing))) == 1:
-        # All spacings equal - default to dimension 0
-        z_dim = 0
+        # All spacings equal - default to dimension 2
+        z_dim = 2
     else:
         counts = np.bincount(original_size)
         if (counts == 1).all():
