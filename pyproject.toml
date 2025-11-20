@@ -1,0 +1,63 @@
+## Build system (PEP 517/518)
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+## Project metadata (PEP 621)
+[project]
+name = "neurovfm"
+version = "0.1.0"
+description = "NeuroVFM: generalist neuroimaging models"
+readme = "README.md"
+requires-python = "==3.10.14"
+license = { file = "LICENSE" }
+authors = [
+  { name = "MLiNS Lab" }
+]
+keywords = ["neuroimaging", "medical-imaging", "deep-learning", "vision-transformers"]
+dependencies = [
+  "torch==2.5.0+cu124",
+  "torch-scatter==2.1.2+pt25cu124",
+  "torchvision==0.20.0+cu124",
+  "pytorch-lightning==2.5.0.post0",
+  "omegaconf==2.3.0",
+  "nibabel==5.3.2",
+  "matplotlib==3.10.7",
+  "huggingface-hub==0.34.4",
+  "einops==0.8.0",
+  "SimpleITK==2.4.0",
+  "numpy==2.1.2",
+  "pandas==2.2.3",
+  "tqdm==4.66.5",
+  "scipy==1.15.2",
+  "scikit-learn==1.6.1",
+  "positional-encodings==6.0.3"
+]
+
+[project.urls]
+Homepage = "https://github.com/MLNeurosurg/neurovfm/"
+Repository = "https://github.com/MLNeurosurg/neurovfm/"
+
+## Optional console entry points
+[project.scripts]
+neurovfm-train = "neurovfm.train.train:main"
+
+## Optional dependency groups
+[project.optional-dependencies]
+dev = [
+  "pytest==9.0.1",
+]
+
+## Setuptools configuration
+[tool.setuptools]
+## If you later move to a src/ layout, adjust here
+
+[tool.setuptools.packages.find]
+include = ["neurovfm*"]
+exclude = ["tests*"]
+
+## Include non-Python files if needed at runtime (uncomment and adjust)
+## [tool.setuptools.package-data]
+## neurovfm = ["**/*.yaml", "**/*.json"]
+
+
