@@ -9,9 +9,9 @@ import torch.nn as nn
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 import logging
+from importlib.resources import files
 
-from neurovfm.models import ABMIL, AdditiveMIL
-
+from neurovfm.models import ClassifyThenAggregate
 
 class DiagnosticHead:
     """
@@ -20,14 +20,14 @@ class DiagnosticHead:
     Pools token embeddings to study-level and applies classification head.
     
     Args:
-        pooler (nn.Module): MIL pooling module (ABMIL or AdditiveMIL)
+        pooler (nn.Module): MIL pooling module (AggregateThenClassify / ClassifyThenAggregate)
         classifier (nn.Module): Classification head (projection to label space)
         label_names (List[str]): List of label names
         device (str): Device to run inference on
         threshold (float): Prediction threshold for binary classification. Defaults to 0.5.
     
     Example:
-        >>> dx_head = load_diagnostic_head("mlinslab/neurovfm-ctbleed-classifier")
+        >>> dx_head = load_diagnostic_head("mlinslab/neurovfm-dx-ct")
         >>> encoder, preproc = load_encoder("mlinslab/neurovfm-encoder")
         >>> vols = preproc.load_study("/path/to/study/", modality="ct")
         >>> embs = encoder.embed(vols)
@@ -37,21 +37,17 @@ class DiagnosticHead:
     def __init__(
         self,
         pooler: nn.Module,
-        classifier: nn.Module,
         label_names: List[str],
         device: Optional[str] = None,
         threshold: float = 0.5,
     ):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.pooler = pooler.to(self.device).eval()
-        self.classifier = classifier.to(self.device).eval()
         self.label_names = label_names
         self.threshold = threshold
         
         # Freeze models
         for param in self.pooler.parameters():
-            param.requires_grad = False
-        for param in self.classifier.parameters():
             param.requires_grad = False
     
     @torch.inference_mode()
@@ -98,13 +94,10 @@ class DiagnosticHead:
             num_studies = len(study_cu_seqlens) - 1
             
             # Reshape for classifier [B, D]
-            pooled = pooled.view(num_studies, -1)
+            pooled = pooled.view(num_studies, -1).squeeze(-1) # [B, num_labels]
             
             # Apply classifier
-            logits = self.classifier(pooled).squeeze(-1)  # [B, num_labels]
-            
-            # Apply sigmoid for multi-label
-            probs = torch.sigmoid(logits)
+            probs = torch.sigmoid(pooled)  # [B, num_labels]
             preds = (probs > self.threshold).long()
         
         # Convert to CPU for output
@@ -147,7 +140,7 @@ def load_diagnostic_head(
     Load pretrained diagnostic head from HuggingFace Hub.
     
     Args:
-        model_name_or_path (str): HuggingFace model ID (e.g., "mlinslab/neurovfm-ctbleed-classifier")
+        model_name_or_path (str): HuggingFace model ID (e.g., "mlinslab/neurovfm-dx-ct")
                                    or local path to checkpoint
         device (str, optional): Device to load model on
     
@@ -155,7 +148,7 @@ def load_diagnostic_head(
         DiagnosticHead: Diagnostic head pipeline
     
     Example:
-        >>> dx_head = load_diagnostic_head("mlinslab/neurovfm-ctbleed-classifier")
+        >>> dx_head = load_diagnostic_head("mlinslab/neurovfm-dx-ct")
         >>> encoder, preproc = load_encoder("mlinslab/neurovfm-encoder")
         >>> vols = preproc.load_study("/path/to/study/", modality="ct")
         >>> embs = encoder.embed(vols)
@@ -187,62 +180,42 @@ def load_diagnostic_head(
         config = json.load(f)
     
     # Build pooler
-    pooler_type = config["pooler"]["type"]
-    pooler_params = config["pooler"]["params"]
-    
-    if pooler_type == "abmil":
-        pooler = ABMIL(**pooler_params)
-    elif pooler_type == "additive_mil":
-        pooler = AdditiveMIL(**pooler_params)
+    pooler_type = config["which"]
+    pooler_params = config["params"]
+
+    # Support both legacy and new descriptive names
+    model_dim = 768
+    if pooler_type in {"aggregate_then_classify"}:
+        pooler = AggregateThenClassify(
+            dim=model_dim,
+            **pooler_params)
+    elif pooler_type in {"classify_then_aggregate"}:
+        pooler = ClassifyThenAggregate(
+            dim=model_dim,
+            **pooler_params)
     else:
         raise ValueError(f"Unknown pooler type: {pooler_type}")
     
-    # Build classifier (simple linear projection)
-    classifier_params = config["classifier"]
-    classifier = nn.Linear(
-        classifier_params["in_features"],
-        classifier_params["num_labels"]
-    )
-    
     # Load weights
     state_dict = torch.load(weights_path, map_location="cpu")
-    
-    # Handle Lightning checkpoint format
-    if "state_dict" in state_dict:
-        state_dict = state_dict["state_dict"]
-    
-    # Split into pooler and classifier weights
-    pooler_state = {}
-    classifier_state = {}
-    
-    for k, v in state_dict.items():
-        # Remove common prefixes
-        k = k.replace("model.", "")
-        k = k.replace("classifier.", "")
-        
-        if "pooler" in k:
-            new_k = k.replace("pooler.", "")
-            pooler_state[new_k] = v
-        elif "proj" in k or "head" in k or "fc" in k:
-            new_k = k.replace("proj.", "").replace("head.", "").replace("fc.", "")
-            classifier_state[new_k] = v
-    
-    pooler.load_state_dict(pooler_state, strict=False)
-    classifier.load_state_dict(classifier_state, strict=False)
-    
+    pooler.load_state_dict(state_dict, strict=False)
     logging.info(f"Loaded diagnostic head weights from {weights_path}")
-    
-    # Get label names and threshold from config
-    label_names = config.get("label_names", [f"label_{i}" for i in range(classifier_params["num_labels"])])
-    threshold = config.get("threshold", 0.5)
+
+    if "mri" in model_name_or_path:
+        with (files("neurovfm.pipelines.resources") / "mri_label_names.txt").open("r") as f:
+            label_names = [line.strip() for line in f.readlines()]
+    elif "ct" in model_name_or_path:
+        with (files("neurovfm.pipelines.resources") / "ct_label_names.txt").open("r") as f:
+            label_names = [line.strip() for line in f.readlines()]
+    else:
+        raise ValueError(f"Unknown model: {model_name_or_path}")
     
     # Create diagnostic head
     dx_head = DiagnosticHead(
         pooler=pooler,
-        classifier=classifier,
         label_names=label_names,
         device=device,
-        threshold=threshold
+        threshold=0.5
     )
     
     logging.info("Diagnostic head pipeline ready")

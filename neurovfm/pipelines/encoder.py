@@ -157,7 +157,7 @@ def load_encoder(
         config = json.load(f)
     
     # Build model
-    model = get_vit_backbone(**config["model"])
+    model = get_vit_backbone(**config)
     
     # Load weights
     state_dict = torch.load(weights_path, map_location="cpu")
@@ -167,15 +167,15 @@ def load_encoder(
         state_dict = state_dict["state_dict"]
     
     # Handle potential prefixes
-    new_state_dict = {}
-    for k, v in state_dict.items():
-        # Remove common prefixes
-        k = k.replace("model.", "")
-        k = k.replace("student.vision_encoder.", "")
-        k = k.replace("vision_encoder.", "")
-        new_state_dict[k] = v
+    # new_state_dict = {}
+    # for k, v in state_dict.items():
+    #     # Remove common prefixes
+    #     k = k.replace("model.", "")
+    #     k = k.replace("student.vision_encoder.", "")
+    #     k = k.replace("vision_encoder.", "")
+    #     new_state_dict[k] = v
     
-    model.load_state_dict(new_state_dict, strict=False)
+    model.load_state_dict(state_dict, strict=False)
     logging.info(f"Loaded encoder weights from {weights_path}")
     
     # Get normalization stats from config

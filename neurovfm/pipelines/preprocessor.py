@@ -152,7 +152,12 @@ class StudyPreprocessor:
                     all_coords.append(coords_tensor)
                     series_lengths.append(len(tokens_tensor))
                     mode_list.append(modality)
-                    path_list.append(f"{img_path}:window{window_idx}")
+                    if window_idx == 0:
+                        path_list.append(f"{img_path.stem}_BrainWindow")
+                    elif window_idx == 1:
+                        path_list.append(f"{img_path.stem}_BloodWindow")
+                    else:
+                        path_list.append(f"{img_path.stem}_BoneWindow")
                     size_list.append(img_arr.shape)
             else:
                 # MRI: single array
