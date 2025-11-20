@@ -81,7 +81,7 @@ system:
   params:
     model_hyperparams:
       pooler_cf:
-        which: abmil  # abmil, addmil, or avgpool
+        which: classify_then_aggregate  # or aggregate_then_classify, both AB-MIL-based
       proj_params:
         out_dim: 3  # Number of labels (for multilabel)
     loss_cf:
@@ -131,7 +131,7 @@ Tokenized Images [N, 1024]
     ↓
 [VisionPredictor] → Predict masked patches
     ↓
-[JEPA/iBOT Loss] → Compare with teacher
+[JEPA Loss] → Compare with teacher
 ```
 
 **Classification (Supervised)**:
@@ -140,7 +140,7 @@ Tokenized Images [N, 1024]
     ↓
 [VisionTransformer] (frozen) → Extract features
     ↓
-[ABMIL/AdditiveMIL] → Pool to study-level
+[AggregateThenClassify/ClassifyThenAggregate] → Pool to study-level
     ↓
 [MLP] → Classification head
     ↓
@@ -276,7 +276,7 @@ system:
   params:
     model_hyperparams:
       pooler_cf:
-        which: abmil             # abmil, addmil, avgpool
+        which: classify_then_aggregate     # or aggregate_then_classify
       proj_params:
         out_dim: int             # Number of output classes
     loss_cf:
@@ -396,7 +396,7 @@ tensorboard --logdir /path/to/exp_root/tb
 # 3. Training will save checkpoints to exp_root/models/
 ```
 
-### Workflow 2: Fine-tune for Classification
+### Workflow 2: Classification with Frozen Backbone
 
 ```bash
 # 1. Create classification config with load_backbone pointing to pretrained checkpoint
@@ -440,11 +440,4 @@ Combine MRI and CT by:
 1. Setting appropriate mode_mapping
 2. Enabling study_sampler to mix modalities in batches
 3. The model automatically handles different normalizations
-
-## Citation
-
-If you use NeuroVFM in your research, please cite:
-```
-[Citation information to be added]
-```
 

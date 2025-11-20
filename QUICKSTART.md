@@ -268,7 +268,7 @@ training:
                          ▼
 ┌─────────────────────────────────────────────────────┐
 │  Normalization: NormalizationModule                 │
-│  • Modality-specific (MRI/CT brain/blood/bone)     │
+│  • Modality-specific (MRI/CT brain/blood/bone)      │
 │  • Optional intensity augmentations                 │
 └─────────────────────────────────────────────────────┘
                          │
@@ -283,20 +283,13 @@ training:
 ┌─────────────────────────────────────────────────────┐
 │  Task Head                                          │
 │  • Pretraining: VisionPredictor → Predict masked    │
-│  • Classification: ABMIL/AdditiveMIL → Classify     │
+│  • Classification: AB-MIL → Classify                │
 └─────────────────────────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────┐
 │  Loss & Optimization                                │
-│  • JEPA/iBOT (pretraining) or BCE/CE (supervised)  │
+│  • JEPA (pretraining) or BCE/CE (supervised)  │
 │  • AdamW + Cosine LR schedule                       │
 └─────────────────────────────────────────────────────┘
 ```
-
-## Support
-
-- **Issues**: GitHub Issues (to be added)
-- **Email**: [contact info]
-- **Documentation**: All markdown files in repo
-
