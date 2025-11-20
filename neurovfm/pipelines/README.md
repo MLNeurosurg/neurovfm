@@ -1,6 +1,6 @@
 # Inference Pipelines
 
-High-level APIs for loading models and running inference on medical imaging studies.
+High-level APIs for loading models and running inference on neuroimaging studies.
 
 ## Overview
 
@@ -8,7 +8,7 @@ The pipelines module provides three main components:
 
 1. **EncoderPipeline**: Loads pretrained Vision Transformer encoder and generates token-level embeddings
 2. **DiagnosticHead**: Pools token embeddings and applies classification head for diagnosis
-3. **StudyPreprocessor**: Loads and preprocesses medical imaging studies (NIfTI/DICOM)
+3. **StudyPreprocessor**: Loads and preprocesses neuroimaging studies (NIfTI/DICOM)
 
 ## Quick Start
 
@@ -17,7 +17,7 @@ from neurovfm.pipelines import load_encoder, load_diagnostic_head
 
 # Load models
 encoder, preprocessor = load_encoder("mlinslab/neurovfm-encoder")
-dx_head = load_diagnostic_head("mlinslab/neurovfm-ctbleed-classifier")
+dx_head = load_diagnostic_head("mlinslab/neurovfm-dx-ct")
 
 # Load study
 batch = preprocessor.load_study("/path/to/ct/study/", modality="ct")
@@ -34,14 +34,14 @@ for label, prob, pred in predictions:
 ## Architecture Flow
 
 ```
-Medical Images (NIfTI/DICOM)
+Neuroimages (NIfTI/DICOM)
     ↓
 [StudyPreprocessor] → Tokenized Volumes
     ↓
 [EncoderPipeline] → Token-Level Embeddings [N, D]
     ↓
 [DiagnosticHead]
-    ├─ Pooler (MIL) → Study-Level Embedding [1, D]
+    ├─ Pooler (AB-MIL) → Study-Level Embedding [1, D]
     └─ Classifier → Predictions [(label, prob, pred), ...]
 ```
 
@@ -106,7 +106,7 @@ Load and preprocess a study (one or more volumes).
 **Background Filtering:**
 By default (`remove_background=True`), background tokens are physically removed during preprocessing. This improves inference efficiency and memory usage. The encoder receives only foreground tokens and `series_masks_indices` is empty.
 
-Alternatively, with `remove_background=False`, all tokens are kept and foreground indices are passed via `series_masks_indices` for the encoder to filter internally.
+Alternatively, with `remove_background=False`, all tokens are kept and the encoder is applied to both foreground and background tokens. In the current high-level inference pipeline, `series_masks_indices` is not populated by `StudyPreprocessor`; index-based masking is instead used in the training data pipeline (see `MultiViewCollator` in `neurovfm.datasets`).
 
 ## Examples
 
@@ -117,7 +117,7 @@ from neurovfm.pipelines import load_encoder, load_diagnostic_head
 
 # Load models
 encoder, preprocessor = load_encoder("mlinslab/neurovfm-encoder")
-dx_head = load_diagnostic_head("mlinslab/neurovfm-ctbleed-classifier")
+dx_head = load_diagnostic_head("mlinslab/neurovfm-dx-ct")
 
 # Run inference
 batch = preprocessor.load_study("/path/to/study/", modality="ct")
@@ -160,12 +160,6 @@ embeddings = encoder.embed(batch)
 encoder, preprocessor = load_encoder("mlinslab/neurovfm-encoder")
 batch = preprocessor.load_study("/path/to/study/", modality="ct")
 embeddings = encoder.embed(batch)  # [N_total, D]
-
-# Use for downstream tasks:
-# - Similarity search
-# - Clustering
-# - Custom models
-# - Visualization
 ```
 
 ### Local Checkpoints
@@ -174,47 +168,6 @@ embeddings = encoder.embed(batch)  # [N_total, D]
 # Load from local path instead of HuggingFace
 encoder, preprocessor = load_encoder("/path/to/local/checkpoint/")
 dx_head = load_diagnostic_head("/path/to/local/classifier/")
-```
-
-## Configuration
-
-### Model Config Format (config.json)
-
-**Encoder:**
-```json
-{
-  "model": {
-    "img_size": [192, 192, 64],
-    "patch_size": [4, 16, 16],
-    "embed_dim": 768,
-    "depth": 12,
-    "num_heads": 12
-  },
-  "normalization_stats": [
-    [0.3141, 0.4139, 0.3184, 0.2719],
-    [0.2623, 0.4059, 0.3605, 0.1875]
-  ]
-}
-```
-
-**Diagnostic Head:**
-```json
-{
-  "pooler": {
-    "type": "abmil",
-    "params": {
-      "in_features": 768,
-      "out_features": 256,
-      "num_heads": 1
-    }
-  },
-  "classifier": {
-    "in_features": 256,
-    "num_labels": 3
-  },
-  "label_names": ["hemorrhage", "fracture", "mass"],
-  "threshold": 0.5
-}
 ```
 
 ## Preprocessing
@@ -241,10 +194,10 @@ preprocessor = StudyPreprocessor(
 
 ### Background Token Filtering
 
-Medical images contain significant background (air, outside patient) that provides no useful information. The preprocessing pipeline automatically detects and handles background:
+Neuroimages contain significant background (air, outside patient) that provides no useful information. The preprocessing pipeline automatically detects and handles background:
 
 1. **Background Detection**: 
-   - **CT**: HU threshold (-500 HU separates air from tissue)
+   - **CT**: HU threshold
    - **MRI**: Percentile-based intensity thresholding
 
 2. **Token-Level Filtering**:
@@ -252,11 +205,11 @@ Medical images contain significant background (air, outside patient) that provid
    - This ensures no information loss at patch boundaries
 
 3. **Removal Options**:
-   - **`remove_background=True` (default)**: Physically remove background tokens before encoder
+   - **`remove_background=True` (default)**: Physically remove background tokens before encoder; encoder processes only foreground tokens
      - Pros: Faster inference, lower memory usage
      - Cons: None for inference
-   - **`remove_background=False`**: Keep all tokens, pass mask indices to encoder
-     - Pros: Preserves full spatial structure
+   - **`remove_background=False`**: Keep all tokens; encoder processes both foreground and background tokens (no mask indices are passed in this pipelines API)
+     - Pros: Preserves full spatial structure and raw background context
      - Cons: Slower, uses more memory
 
 For inference, **always use `remove_background=True`** (default) for optimal performance.
