@@ -15,7 +15,11 @@ import pytorch_lightning as pl
 import torchmetrics
 import torch_scatter
 
-from neurovfm.models import get_vit_backbone, ABMIL, AdditiveMIL
+from neurovfm.models import (
+    get_vit_backbone,
+    AggregateThenClassify,
+    ClassifyThenAggregate,
+)
 from neurovfm.models.projector import MLP
 from neurovfm.systems.utils import NormalizationModule
 from neurovfm.optim import get_optimizer_scheduler
@@ -45,22 +49,24 @@ class VisionClassifier(nn.Module):
         self.bb.eval()
 
         # MIL Pooler
-        if pooler_cf["which"] == "abmil":
-            self.pooler = ABMIL(
+        which = pooler_cf["which"]
+        if which in {"abmil", "aggregate_then_classify"}:
+            self.pooler = AggregateThenClassify(
                 dim=self.bb.embed_dim,
-                **pooler_cf["params"]
+                **pooler_cf["params"],
             )
             self.proj = MLP(
                 in_dim=self.pooler.num_features,
                 out_dim=proj_params.get("out_dim", 1),
                 hidden_dims=proj_params.get("hidden_dims", [self.pooler.num_features // 2]),
             )
-        elif pooler_cf["which"] == "addmil":
-            self.pooler = AdditiveMIL(
+        elif which in {"addmil", "classify_then_aggregate"}:
+            self.pooler = ClassifyThenAggregate(
                 dim=self.bb.embed_dim,
-                **pooler_cf["params"]
+                **pooler_cf["params"],
             )
-            self.proj = None  # Additive MIL outputs logits directly
+            # Classify-Then-Aggregate outputs logits directly
+            self.proj = None
         elif pooler_cf["which"] == "avgpool":
             self.pooler = lambda x, cu_seqlens, max_seqlen: torch_scatter.segment_csr(
                 src=x, indptr=cu_seqlens.long(), reduce='mean'
@@ -143,13 +149,13 @@ class VisionClassificationSystem(pl.LightningModule):
             raise ValueError(f"Loss {loss_cf['which']} not supported")
 
         # Setup metrics
-        if training_params:
+        if training_params is not None:
             self.train_loss = torchmetrics.MeanMetric()
             self.val_loss = torchmetrics.MeanMetric()
-            
+
             if loss_cf["which"] == "bce":
                 if wts.ndim == 2:  # Multilabel
-                    num_labels = len(wts)
+                    num_labels = wts.shape[0]
                     self.train_acc_stats = torchmetrics.classification.MultilabelStatScores(
                         num_labels=num_labels, threshold=0.0, average=None
                     )
@@ -162,7 +168,7 @@ class VisionClassificationSystem(pl.LightningModule):
                     self.val_auc_stats = torchmetrics.AUROC(
                         task="multilabel", num_labels=num_labels, average=None
                     )
-                else:  # Binary
+                else:  # Binary (1D weights)
                     self.train_acc_stats = torchmetrics.classification.BinaryStatScores(threshold=0.0)
                     self.val_acc_stats = torchmetrics.classification.BinaryStatScores(threshold=0.0)
                     self.train_auc_stats = torchmetrics.AUROC(task="binary")
