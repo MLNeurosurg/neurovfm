@@ -27,6 +27,40 @@ SYSTEMS = {
 }
 
 
+def get_num_it_per_train_ep(train_len: int, cf: OmegaConf) -> dict:
+    """Calculate iterations per epoch and effective batch size.
+
+    Args:
+        train_len: length of the training set
+        cf: global config
+
+    Returns:
+        num_it_per_ep: number of iteration in each epoch
+    """
+    if torch.cuda.is_available():
+        # Use configured data-parallel world size if available
+        world_size = cf.infra.get("num_gpus", 1) * cf.infra.get("num_nodes", 1)
+    else:
+        world_size = 1
+
+    train_loader_cf = cf.data.loader.train
+    batch_size = train_loader_cf.batch_size
+    drop_last = train_loader_cf.get("drop_last", True)
+    accumulate = cf.training.trainer_params.get("accumulate_grad_batches", 1)
+
+    effective_batch_size = batch_size * world_size * accumulate
+
+    num_it_per_ep = train_len // effective_batch_size
+
+    if not drop_last:
+        num_it_per_ep += int((train_len % effective_batch_size) > 0)
+
+    return {
+        "num_it_per_ep": num_it_per_ep,
+        "effective_batch_size": effective_batch_size
+    }
+    
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Train Vision Models")
@@ -197,9 +231,10 @@ def train(config: OmegaConf):
     dm = ImageDataModule(config)
     dm.setup(stage="fit")
     
-    # Get class weights if classification task
+    # Compute iteration and batch-size stats for optimizer/scheduler
+    train_stats = get_num_it_per_train_ep(len(dm.train_dataset), config)
     training_params = {
-        "num_it_per_ep": len(dm.train_dataset) // config.data.loader.train.batch_size,
+        **train_stats,
         "num_ep_total": config.training.trainer_params.max_epochs,
     }
     

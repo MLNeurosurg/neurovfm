@@ -125,6 +125,7 @@ class VisionClassificationSystem(pl.LightningModule):
         self.opt_cf_ = opt_cf
         self.schd_cf_ = schd_cf
         self.training_params_ = training_params
+        self._is_multilabel = None  # Will be inferred from logits shape at runtime
 
         # Extract class weights before removing from training_params
         wts = training_params["wts"]
@@ -276,14 +277,36 @@ class VisionClassificationSystem(pl.LightningModule):
             logits = self.model.pooler(embs, cu_seqlens=study_cu_seqlens, max_seqlen=study_max_seqlen)
             logits = logits.squeeze(-1)
 
-        # Compute loss
+        # Compute loss and update metrics
         if self.loss_cf_["which"] == "bce":
-            if logits.ndim > 1:  # Multilabel
+            # Infer multilabel vs binary from logits shape on first step
+            is_multilabel = logits.ndim > 1
+            if self._is_multilabel is None:
+                self._is_multilabel = is_multilabel
+                if is_multilabel:
+                    num_labels = logits.shape[1]
+                    device = logits.device
+                    self.train_acc_stats = torchmetrics.classification.MultilabelStatScores(
+                        num_labels=num_labels, threshold=0.0, average=None
+                    ).to(device)
+                    self.val_acc_stats = torchmetrics.classification.MultilabelStatScores(
+                        num_labels=num_labels, threshold=0.0, average=None
+                    ).to(device)
+                    self.train_auc_stats = torchmetrics.AUROC(
+                        task="multilabel", num_labels=num_labels, average=None
+                    ).to(device)
+                    self.val_auc_stats = torchmetrics.AUROC(
+                        task="multilabel", num_labels=num_labels, average=None
+                    ).to(device)
+
+            if self._is_multilabel:
+                # Multilabel: logits and labels are [B, num_labels]
                 pred = logits > 0.
                 self.train_acc_stats.update(pred, labels.int())
                 self.train_auc_stats.update(logits, labels.int())
                 loss = self.criterion(logits, labels)
-            else:  # Binary
+            else:
+                # Binary: logits and labels are [B]
                 pred = logits > 0.
                 self.train_acc_stats.update(pred, labels.int())
                 self.train_auc_stats.update(logits, labels.int())
@@ -383,12 +406,32 @@ class VisionClassificationSystem(pl.LightningModule):
 
         # Compute loss and metrics
         if self.loss_cf_["which"] == "bce":
-            if logits.ndim > 1:  # Multilabel
+            # Infer multilabel vs binary from logits shape if not set (e.g., if validation runs first)
+            is_multilabel = logits.ndim > 1
+            if self._is_multilabel is None:
+                self._is_multilabel = is_multilabel
+                if is_multilabel:
+                    num_labels = logits.shape[1]
+                    device = logits.device
+                    self.train_acc_stats = torchmetrics.classification.MultilabelStatScores(
+                        num_labels=num_labels, threshold=0.0, average=None
+                    ).to(device)
+                    self.val_acc_stats = torchmetrics.classification.MultilabelStatScores(
+                        num_labels=num_labels, threshold=0.0, average=None
+                    ).to(device)
+                    self.train_auc_stats = torchmetrics.AUROC(
+                        task="multilabel", num_labels=num_labels, average=None
+                    ).to(device)
+                    self.val_auc_stats = torchmetrics.AUROC(
+                        task="multilabel", num_labels=num_labels, average=None
+                    ).to(device)
+
+            if self._is_multilabel:
                 pred = logits > 0.
                 self.val_acc_stats.update(pred, labels.int())
                 self.val_auc_stats.update(logits, labels.int())
                 loss = self.criterion(logits, labels)
-            else:  # Binary
+            else:
                 pred = logits > 0.
                 self.val_acc_stats.update(pred, labels.int())
                 self.val_auc_stats.update(logits, labels.int())

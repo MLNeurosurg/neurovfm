@@ -268,8 +268,8 @@ class ImageDataset(Dataset):
         if study_name in self.study_labels:
             label = self.study_labels[study_name]
         else:
-            # Default to study name if no label provided (for pretraining)
-            label = study_name
+            # Default to numeric label 0 if no label provided (for pretraining)
+            label = 0
         
         # Determine token dimensions
         # For images at 1x1x4mm with 16x16x4 patches: tokens = D//4, H//16, W//16

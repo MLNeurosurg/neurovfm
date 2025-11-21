@@ -61,7 +61,7 @@ class MultiViewCollator:
                 - 'filtered': [N] background mask
                 - 'size': [3] volume dimensions (depth, height, width)
                 - 'label': scalar or array
-                - 'dir_uid': study identifier
+                - 'study': study identifier
                 - 'path': file path
                 - 'mode': 'mri' or 'ct'
         
@@ -89,7 +89,7 @@ class MultiViewCollator:
             return self._empty_batch(device)
 
         # Re-group flat batch by study_id
-        study_groups = [list(group) for _, group in groupby(batch, key=itemgetter('dir_uid'))]
+        study_groups = [list(group) for _, group in groupby(batch, key=itemgetter('study'))]
 
         # Prepare data
         study_imgs, study_coords, study_filters, study_sizes, study_labels = [], [], [], [], []

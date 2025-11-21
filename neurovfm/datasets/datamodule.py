@@ -18,7 +18,7 @@ from typing import Optional
 from neurovfm.data.metadata import DatasetMetadata
 from neurovfm.data.cache import CacheManager
 from neurovfm.datasets.dataset import ImageDataset, StudyAwareBatchSampler
-from neurovfm.datasets.collators import MultiViewCollator
+from neurovfm.datasets.collators import MultiViewCollator, MultiBlockCollator
 
 
 class ImageDataModule(pl.LightningDataModule):
@@ -172,7 +172,32 @@ class ImageDataModule(pl.LightningDataModule):
         # Setup collator
         if 'collate_fn' in loader_params:
             collate_params = loader_params.pop('collate_fn')
-            collate_fn = MultiViewCollator(**collate_params)
+            # Use JEPA-style MultiBlockCollator for pretraining system,
+            # otherwise default to MultiViewCollator.
+            if getattr(getattr(self.config, "system", None), "which", "") == "VisionPretrainingSystem":
+                # Default JEPA mask configuration (mirrors _MultiBlockCollator defaults)
+                mask_cfg = {
+                    "hw_pred_mask_scale": [
+                        {"mri": [0.7, 0.7], "ct": [0.75, 0.75]},
+                        {"mri": [0.25, 0.25], "ct": [0.2, 0.2]},
+                    ],
+                    "d_pred_mask_scale": (1.0, 1.0),
+                    "enc_mask_scale": {"mri": 0.25, "ct": 0.2},
+                    "drop_rate": collate_params.get("patch_drop_rate", 0.0),
+                    "aspect_ratio": [(0.3, 3.0)],
+                    "npred": [1],
+                    "max_depth_scale": 1.0,
+                    "remove_background": collate_params.get("remove_background", True),
+                    "min_filt_ratio": collate_params.get("min_filt_ratio", 0.0),
+                    "switch_enc_pred": collate_params.get("switch_enc_pred", [False]),
+                }
+                apply_masks_internally = collate_params.get("apply_masks_internally", False)
+                collate_fn = MultiBlockCollator(
+                    cfgs_mask=[mask_cfg],
+                    apply_masks_internally=apply_masks_internally,
+                )
+            else:
+                collate_fn = MultiViewCollator(**collate_params)
             loader_params['collate_fn'] = collate_fn
         
         # Setup study-aware sampler if requested
@@ -214,7 +239,29 @@ class ImageDataModule(pl.LightningDataModule):
         # Setup collator
         if 'collate_fn' in loader_params:
             collate_params = loader_params.pop('collate_fn')
-            collate_fn = MultiViewCollator(**collate_params)
+            if getattr(getattr(self.config, "system", None), "which", "") == "VisionPretrainingSystem":
+                mask_cfg = {
+                    "hw_pred_mask_scale": [
+                        {"mri": [0.7, 0.7], "ct": [0.75, 0.75]},
+                        {"mri": [0.25, 0.25], "ct": [0.2, 0.2]},
+                    ],
+                    "d_pred_mask_scale": (1.0, 1.0),
+                    "enc_mask_scale": {"mri": 0.25, "ct": 0.2},
+                    "drop_rate": collate_params.get("patch_drop_rate", 0.0),
+                    "aspect_ratio": [(0.3, 3.0)],
+                    "npred": [1],
+                    "max_depth_scale": 1.0,
+                    "remove_background": collate_params.get("remove_background", True),
+                    "min_filt_ratio": collate_params.get("min_filt_ratio", 0.0),
+                    "switch_enc_pred": collate_params.get("switch_enc_pred", [False]),
+                }
+                apply_masks_internally = collate_params.get("apply_masks_internally", False)
+                collate_fn = MultiBlockCollator(
+                    cfgs_mask=[mask_cfg],
+                    apply_masks_internally=apply_masks_internally,
+                )
+            else:
+                collate_fn = MultiViewCollator(**collate_params)
             loader_params['collate_fn'] = collate_fn
         
         # Setup study-aware sampler if requested

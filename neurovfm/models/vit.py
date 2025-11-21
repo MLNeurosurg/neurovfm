@@ -653,29 +653,18 @@ class VisionPredictor(nn.Module):
             raise ImportError("PerceiverBlock not available. Install waldo or disable use_perceiver_block")
         
         self.blocks = nn.ModuleList([
-            PerceiverBlock(dim, 
-                           dim_head, 
-                           num_heads, 
-                           mlp_ratio, 
-                           qkv_bias, 
-                           qk_scale, 
-                           attn_drop_rate, 
-                           drop_path1=dpr[i-1] if i > 0 else 0.0,
-                           drop_path2=dpr[i],
-                           norm_layer=norm_layer,
-                           act_layer=act_layer) if (self.from_text_encoder is not None) and (use_perceiver_block)
-            else Block(dim,
-                       dim_head,
-                       num_heads,
-                       mlp_ratio=mlp_ratio,
-                       qkv_bias=qkv_bias,
-                       qk_scale=qk_scale,
-                       attn_drop=attn_drop_rate,
-                       drop_path1=dpr[i-1] if i > 0 else 0.0,
-                       drop_path2=dpr[i],
-                       norm_layer=norm_layer,
-                       act_layer=act_layer,
-                       use_cross_attn=False)
+            Block(dim,
+                  dim_head,
+                  num_heads,
+                  mlp_ratio=mlp_ratio,
+                  qkv_bias=qkv_bias,
+                  qk_scale=qk_scale,
+                  attn_drop=attn_drop_rate,
+                  drop_path1=dpr[i-1] if i > 0 else 0.0,
+                  drop_path2=dpr[i],
+                  norm_layer=norm_layer,
+                  act_layer=act_layer,
+                  use_cross_attn=False)
             for i in range(depth)
         ])
 
@@ -862,30 +851,19 @@ class VisionPredictor(nn.Module):
         all_attn_weights = [] if return_attn_weights else None
 
         for block in self.blocks:
-            if isinstance(block, PerceiverBlock):
-                latents, residual = block(latents, 
-                                          media, 
-                                          residual, 
-                                          cu_seqlens_q, 
-                                          info_media[1],
-                                          cu_seqlens_k, 
-                                          max_seqlen_q, 
-                                          info_media[2],
-                                          max_seqlen_k)
-            else:
-                block_output = block(latents,
-                                     cu_seqlens=cu_seqlens_q,
-                                     max_seqlen=max_seqlen_q,
-                                     residual=residual,
-                                     use_flash_attn=use_flash_attn,
-                                     return_attn_weights=return_attn_weights)
-                
-                latents = block_output[0]
-                residual = block_output[1]
-                block_attn_weights = block_output[2]
+            block_output = block(latents,
+                                    cu_seqlens=cu_seqlens_q,
+                                    max_seqlen=max_seqlen_q,
+                                    residual=residual,
+                                    use_flash_attn=use_flash_attn,
+                                    return_attn_weights=return_attn_weights)
+            
+            latents = block_output[0]
+            residual = block_output[1]
+            block_attn_weights = block_output[2]
 
-                if return_attn_weights and block_attn_weights is not None:
-                    all_attn_weights.append(block_attn_weights)
+            if return_attn_weights and block_attn_weights is not None:
+                all_attn_weights.append(block_attn_weights)
 
         # Drop, add, norm
         if self.drop_path.p == 0 or not self.training:

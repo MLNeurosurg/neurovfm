@@ -28,20 +28,17 @@ class VisionNetwork(nn.Module):
     Args:
         vision_backbone_cf (Dict): Configuration for vision encoder backbone
         predictor_cf (Dict): Configuration for predictor module
-        proj_mim_dim (int, optional): MIM projection head output dimension. Defaults to 2048.
     """
     def __init__(
         self,
         vision_backbone_cf: Dict,
         predictor_cf: Dict,
-        proj_mim_dim: int = 2048,
     ):
         super().__init__()
         
         # Student encoder + predictor
         self.student = nn.ModuleDict({
             'vision_encoder': get_vit_backbone(**vision_backbone_cf),
-            'proj_mim': nn.Linear(vision_backbone_cf['params']['embed_dim'], proj_mim_dim),
         })
         
         # Predictor (maps student context to teacher target)
@@ -50,7 +47,6 @@ class VisionNetwork(nn.Module):
         # Teacher encoder (EMA of student)
         self.teacher = nn.ModuleDict({
             'vision_encoder': get_vit_backbone(**vision_backbone_cf),
-            'proj_mim': nn.Linear(vision_backbone_cf['params']['embed_dim'], proj_mim_dim),
         })
         
         # Initialize teacher as copy of student
@@ -78,7 +74,6 @@ class VisionPretrainingSystem(pl.LightningModule):
         >>> model_config = {
         ...     'vision_backbone_cf': {...},
         ...     'predictor_cf': {...},
-        ...     'proj_mim_dim': 2048
         ... }
         >>> system = VisionPretrainingSystem(
         ...     model_hyperparams=model_config,
@@ -181,10 +176,9 @@ class VisionPretrainingSystem(pl.LightningModule):
                     cu_seqlens=pred_init[i][1],
                     max_seqlen=pred_init[i][2]
                 )
-                h = F.layer_norm(h, (h.size(-1),))  # Normalize features
-                
-                # Keep only target tokens
-                h_target = self.model.teacher.proj_mim(h[pred[i][0]])
+                # Normalize and keep only target tokens
+                h = F.layer_norm(h, (h.size(-1),))  # [N_total, D]
+                h_target = h[pred[i][0]]
                 hs.append(h_target)
                 del h
 
@@ -226,10 +220,16 @@ class VisionPretrainingSystem(pl.LightningModule):
         # Predict target tokens
         predictions = []
         for i in range(len(pred)):
-            pred_result = self.model.predictor(zs[i], coords, enc[i], pred[i], enc_pred[i])
-            proj_result = [self.model.student.proj_mim(pred_result[0][pred_result[1]])]
-            predictions.append(proj_result)
-            del pred_result
+            pred_tokens, toselect = self.model.predictor(
+                zs[i],
+                coords,
+                enc[i],
+                pred[i],
+                enc_pred[i],
+            )
+            # Select only target tokens; wrap in list for loss_fn interface
+            predictions.append([pred_tokens[toselect]])
+            del pred_tokens, toselect
 
         del zs
         return predictions, []
