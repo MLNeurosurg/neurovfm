@@ -1,0 +1,151 @@
+infra:
+  exp_root: /path/to/experiments/mil_probe
+  seed: 42
+  num_gpus: 1
+  num_nodes: 1
+  log_gpu: false
+  log_every_n_steps: 250
+  # wandb_project:
+  comment: vit_base_mil_probe
+
+data:
+  # Same preprocessed dataset as pretraining
+  data_dir: /path/to/data_root/
+
+  # Use cached, preprocessed tokens only
+  use_cache: true
+  fallback_to_raw: false
+
+  # Study-level binary labels CSV (one row per study)
+  study_labels: /path/to/mil_study_labels.csv
+
+  dataset:
+    train:
+      params:
+        mode_filter: mri
+        random_crop: false
+        augment: true
+        tokenize: true
+        ct_window_probs: [0.7, 0.15, 0.15]
+
+    val:
+      params:
+        mode_filter: mri
+        random_crop: false
+        augment: false
+        tokenize: true
+        ct_window_probs: [0.7, 0.15, 0.15]
+
+  loader:
+    train:
+      batch_size: 4
+      num_workers: 8
+      shuffle: true
+      drop_last: true
+      use_study_sampler: true
+      collate_fn:
+        remove_background: true
+        patch_drop_rate: 0.0
+        apply_masks_internally: false
+
+    val:
+      batch_size: 4
+      num_workers: 8
+      shuffle: false
+      drop_last: false
+      use_study_sampler: true
+      collate_fn:
+        remove_background: true
+        patch_drop_rate: 0.0
+        apply_masks_internally: false
+
+system:
+  which: VisionClassificationSystem
+  params:
+    # Model hyperparameters
+    model_hyperparams:
+      # Random, frozen ViT-B encoder (no pretrained checkpoint)
+      vision_backbone_cf:
+        which: vit_base
+        params:
+          token_dim: 1024
+          embed_layer_cf:
+            which: voxel
+            params:
+              patch_hw_size: 16
+              patch_d_size: 4
+              in_chans: 1
+              embed_dim: 738
+          pos_emb_cf:
+            which: pe3d
+            params:
+              d: 30
+              d_size: 128
+              hw_size: 192
+              concat: true
+
+      # Classify-Then-Aggregate MIL pooler (attentive probing)
+      pooler_cf:
+        which: classify_then_aggregate    # ClassifyThenAggregate
+        params:
+          hidden_dim: 512
+          W_out: 2                 # Two binary labels (multilabel)
+          mlp_hidden_dims: [384]
+          mlp_out_dim: 2          # Match number of labels
+          drop_rate: 0.0
+          use_gating: true
+          use_norm: false
+          use_output_bias_scale: true
+
+      # No extra projection head: ClassifyThenAggregate outputs logits directly
+      proj_params:
+        out_dim: 2
+        hidden_dims: [384]
+
+    # Loss configuration (binary classification)
+    loss_cf:
+      which: bce
+      params: {}
+
+    # Optimizer (same schedule as pretraining)
+    opt_cf:
+      which: adamw
+      scale_lr: false
+      params:
+        lr: 5.0e-4
+        start_lr: 1.0e-4
+        final_lr: 1.0e-6
+        betas: [0.9, 0.999]
+        eps: 1.0e-8
+        weight_decay: 0.05
+        amsgrad: false
+
+    # Scheduler
+    schd_cf:
+      which: cos_linear_warmup
+      params:
+        num_warmup_steps: 0.1
+        num_cycles: 0.5
+        ipe_scale: 1.25
+
+    # Optional: custom normalization stats (leave empty to use defaults)
+    # normalization_stats_list:
+    #   - [0.3141, 0.4139, 0.3184, 0.2719]
+    #   - [0.2623, 0.4059, 0.3605, 0.1875]
+
+training:
+  trainer_params:
+    max_epochs: 50
+    gradient_clip_val: 1.0
+    accumulate_grad_batches: 1
+    precision: bf16-mixed
+
+  # Use training AUC on first label as checkpoint metric (multilabel setting)
+  monitor_metric: train/auc_label_0_epoch
+  monitor_mode: max
+  checkpoint_every_n_epochs: 5
+
+  # Optional: load pretrained backbone for attentive probing
+  # load_backbone:
+  #   ckpt_path: /path/to/pretrained_checkpoint.ckpt
+  #   remove_prefix: model.student.vision_encoder.
