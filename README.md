@@ -2,7 +2,7 @@
 
 ## Health system learning achieves generalist neuroimaging models
 
-Preprint (*Coming Soon!*) / [Interactive Demo](https://neurovfm.mlins.org) / [Models](https://huggingface.co/collections/mlinslab/neurovfm) / [MLiNS Lab](https://mlins.org)
+[**Preprint**](https://arxiv.org/abs/2511.18640) / [**Interactive Demo**](https://neurovfm.mlins.org) / [**Models**](https://huggingface.co/collections/mlinslab/neurovfm) / [**MLiNS Lab**](https://mlins.org)
 
 **NeuroVFM** is a health system–scale, volumetric foundation model for multimodal neuroimaging, trained with self-supervision on **5.24M** MRI/CT volumes (**567k** studies) spanning **20+ years** of routine clinical care at Michigan Medicine. 
 
