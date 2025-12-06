@@ -195,7 +195,7 @@ class StudyPreprocessor:
         series_max_len = max(series_lengths)
         
         # Build study-level cumulative lengths (all series belong to one study)
-        study_cu_seqlens = torch.tensor([0, len(series_lengths)], dtype=torch.int32)
+        study_cu_seqlens = torch.tensor([0, series_cu_seqlens[-1]], dtype=torch.int32)
         study_max_len = len(series_lengths)
         
         batch = {

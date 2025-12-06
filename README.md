@@ -17,28 +17,18 @@ The NeuroVFM stack includes:
 
 ## 🔎 TL;DR (what NeuroVFM gives you)
 
-```python
-from neurovfm import load_encoder, load_diagnostic_head, load_llm, interpret_output
-# requires an API key (e.g., OpenAI) set in your environment for external LLM calls
+Study-wise (multi-sequence) embeddings with diagnostic predictions:
 
-encoder, preproc = load_encoder("neurovfm-encoder")
-dx_head = load_diagnostic_head("neurovfm-dx-ct")
-llm = load_llm("neurovfm-llm")
+```python
+from neurovfm import load_encoder, load_diagnostic_head
+
+encoder, preproc = load_encoder("mlinslab/neurovfm-encoder")
+dx_head = load_diagnostic_head("mlinslab/neurovfm-dx-ct")
 
 vols = preproc.load_study("/path/to/study/")             # study directory with 1+ DICOM/NIfTI files   
 embs = encoder.embed(vols)                               # series-wise embeddings   
 
-dx = dx_head.predict_proba(embs, top_k=3)     
-report = llm.generate_findings(
-    embs,
-    clinical_context="32M with sudden, severe 'worst headache of life'.",
-)
-interpretation = interpret_output(                 
-    report=report,
-    diagnoses=dx,
-    model="gpt-5-thinking",
-    action="triage",                              
-)
+dx = dx_head.predict_proba(embs, top_k=3)
 ```
 
 ```console
@@ -46,16 +36,43 @@ interpretation = interpret_output(
 1. aneurysmal_subarachnoid_hemorrhage       p=0.96
 2. mass_effect                              p=0.91
 3. obstructive_hydrocephalus                p=0.74
+```
 
->>> report
-Acute subarachnoid hemorrhage centered in the basal cisterns with extension into
-the perimesencephalic cisterns and along the tentorial incisura. Hemorrhage and
-clot abut and partially efface the cerebral aqueduct with prominence of the
-temporal horns. Mild mass effect on the midbrain.
+Radiological findings generation:
+
+```python
+from neurovfm import load_vlm, interpret_findings
+
+generator, preproc = load_vlm("mlinslab/neurovfm-llm")
+
+vols = preproc.load_study("/path/to/study/")
+
+# clinical_context = "LOC and nausea."                  # optional clinical context
+clinical_context = None
+
+findings = generator.generate(vols, clinical_context)
+
+# optional: pass findings to external frontier LLM to interpret (e.g. clinical triage)
+api_key = "..." # requires API key (e.g., OpenAI) set in your environment
+intepretation = interpret_findings(findings, clinical_context, api_key)
+
+```
+
+```console
+>>> findings
+Findings:
+1. Acute subarachnoid hemorrhage centered in the basal cisterns with extension into
+   the perimesencephalic cisterns and along the tentorial incisura. 
+2. Hemorrhage and clot abut and partially efface the cerebral aqueduct with prominence 
+   of the temporal horns. 
+3. Mild mass effect on the midbrain.
 
 >>> interpretation
-Triage: URGENT
-Rationale: The pattern of hemorrhage in the basal and perimesencephalic cisterns
-with clot impinging on the cerebral aqueduct and early ventricular enlargement is
+Acuity Level: 
+URGENT
+
+Rationale: 
+The pattern of hemorrhage in the basal and perimesencephalic cisterns with 
+clot impinging on the cerebral aqueduct and early ventricular enlargement is
 highly concerning for evolving obstructive hydrocephalus and brainstem compromise.
 ```

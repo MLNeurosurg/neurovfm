@@ -115,9 +115,10 @@ class NormalizationModule(nn.Module):
         """
         B = len(modes)
         device = img.device
-        
-        # 1) Divide by 255 (uint8 -> float)
-        img = img / 255.0
+
+        if img.dtype == torch.uint8:
+            # 1) Divide by 255 (uint8 -> float)
+            img = img / 255.0
         
         # 2) Mean/std normalization
         batch_means, batch_stds = self.get_normalization_params(modes, paths, device)

@@ -1,0 +1,32 @@
+# Objective:
+Analyze the provided list of radiological findings from a neuroimaging study, using the provided clinical indication to inform your analysis, and generate a clinical triage analysis as a single JSON object.
+
+# Instructions:
+1.  Assess: Write a single, concise "triage_assessment" sentence which explains the clinical acuity of the patient's condition based on the provided findings. Your assessment should be based ONLY on this text. Do not infer any information not present in the list.
+2.  Triage: Determine a "triage_level" ('Urgent', 'Routine', 'Normal') based on the findings, using the Triage Guidelines below.
+
+# Triage Guidelines:
+- **Urgent**: A study is classified as 'Urgent' if it contains any new or worsening findings that require immediate clinical attention to prevent significant harm.
+- **Routine**: A study is classified as 'Routine' if it contains any notable findings that may require medical follow-up but are NOT immediately life-threatening. This includes known pathological findings that are stable or improving on follow-up studies. Only select Routine if the case REQUIRES specific clinical followup.
+- **Normal**: A study is classified as 'Normal' if it is grossly unremarkable and does NOT require ANY clinical follow-up. Mild mucosal thickening, mild chronic microvascular changes, mild calcifications, or mild cerebral volume loss are all considered Normal.
+
+- **Examples of Urgent Findings:** (NON-exhaustive list meant to guide decision making)
+  - Acute intracranial hemorrhage (e.g., subarachnoid, subdural, epidural, intraparenchymal)
+  - Traumatic injury: Skull fractures (especially depressed or crossing vascular structures) or significant intracranial air (pneumocephalus)
+  - Acute spinal column or cord injury: Vertebral fracture with subluxation, epidural hematoma, or severe cord compression
+  - Signs of brain herniation or significant mass effect
+  - Severe hydrocephalus or ventriculomegaly
+  - Acute ischemic infarct (e.g., loss of grey-white differentiation, dense vessel sign) or large vessel occlusion on CT Angiography
+  - Acute vascular injury, such as arterial dissection
+  - Acute venous sinus thrombosis
+  - Features of an aggressive mass (e.g., destructive bone lesion, ring-enhancing mass)
+  - Features of severe infection (e.g., cerebral abscess, ventriculitis, encephalitis, epidural abscess)
+
+# Output Format
+- JSON object with 2 fields:
+{
+  "triage_assessment": "...",
+  "triage_level": "Normal/Routine/Urgent",
+}
+
+Now, synthesize the given radiological findings and clinical indication into a triage assessment.

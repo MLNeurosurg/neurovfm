@@ -45,6 +45,9 @@ from .pipelines import (
     EncoderPipeline,
     DiagnosticHead,
     StudyPreprocessor,
+    FindingsGenerationPipeline,
+    load_vlm,
+    interpret_findings,
 )
 
 __all__ = [
@@ -73,5 +76,8 @@ __all__ = [
     "EncoderPipeline",
     "DiagnosticHead",
     "StudyPreprocessor",
+    "FindingsGenerationPipeline",
+    "load_vlm",
+    "interpret_findings",
 ]
 
