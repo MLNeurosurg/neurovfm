@@ -3,6 +3,7 @@ logs/
 model/
 __pycache__/
 .pytest_cache/
+DOCUMENTATION.md
 *.egg-info/
 out/
 .vscode/
