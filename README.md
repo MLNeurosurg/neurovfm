@@ -6,6 +6,8 @@
 
 **NeuroVFM** is a health system–scale, volumetric foundation model for multimodal neuroimaging, trained with self-supervision on **5.24M** MRI/CT volumes (**567k** studies) spanning **20+ years** of routine clinical care at Michigan Medicine. 
 
+![NeuroVFM overview](figures/MainFig1.png)
+
 The NeuroVFM stack includes:
 
 - **3D ViT encoder**, general-purpose representations for *any* clinical neuroimage (T1, T2, FLAIR, DWI, CT, etc.)
@@ -17,34 +19,24 @@ The NeuroVFM stack includes:
 
 ## 🔎 TL;DR (what NeuroVFM gives you)
 
-Study-wise (multi-sequence) embeddings with diagnostic predictions:
+NeuroVFM's defining feature is a standalone `pipelines/` package, which processes raw NIfTI/DICOM files given a study directory and returns (1) diagnostic probabilities, (2) findings, and (3) interpretation from a frontier reasoning model. All NeuroVFM models are hosted on HuggingFace; please request access [here](https://huggingface.co/collections/mlinslab/neurovfm).
 
 ```python
-from neurovfm import load_encoder, load_diagnostic_head
+from neurovfm.pipelines import load_encoder, load_diagnostic_head, load_vlm, interpret_findings
 
-encoder, preproc = load_encoder("mlinslab/neurovfm-encoder")
+# Load pretrained models from HuggingFace
+encoder, preprocessor = load_encoder("mlinslab/neurovfm-encoder")
 dx_head = load_diagnostic_head("mlinslab/neurovfm-dx-ct")
 
-vols = preproc.load_study("/path/to/study/")             # study directory with 1+ DICOM/NIfTI files   
-embs = encoder.embed(vols)                               # series-wise embeddings   
+# Load and preprocess a study directory with 1+ DICOM/NIfTI files
+batch = preprocessor.load_study("/path/to/ct/study/", modality="ct")
 
-dx = dx_head.predict_proba(embs, top_k=3)
-```
+# Generate embeddings and predictions
+embeddings = encoder.embed(batch)
+predictions = dx_head.predict(embeddings, batch)
 
-```console
->>> dx
-1. aneurysmal_subarachnoid_hemorrhage       p=0.96
-2. mass_effect                              p=0.91
-3. obstructive_hydrocephalus                p=0.74
-```
-
-Radiological findings generation:
-
-```python
-from neurovfm import load_vlm, interpret_findings
-
+# Load findings LLM
 generator, preproc = load_vlm("mlinslab/neurovfm-llm")
-
 vols = preproc.load_study("/path/to/study/")
 
 # clinical_context = "LOC and nausea."                  # optional clinical context
@@ -55,24 +47,17 @@ findings = generator.generate(vols, clinical_context)
 # optional: pass findings to external frontier LLM to interpret (e.g. clinical triage)
 api_key = "..." # requires API key (e.g., OpenAI) set in your environment
 intepretation = interpret_findings(findings, clinical_context, api_key)
-
 ```
 
-```console
->>> findings
-Findings:
-1. Acute subarachnoid hemorrhage centered in the basal cisterns with extension into
-   the perimesencephalic cisterns and along the tentorial incisura. 
-2. Hemorrhage and clot abut and partially efface the cerebral aqueduct with prominence 
-   of the temporal horns. 
-3. Mild mass effect on the midbrain.
+## Installation
 
->>> interpretation
-Acuity Level: 
-URGENT
+NeuroVFM is a standard Python package built on PyTorch. To install it, clone this repository and install with `pip` (editable or regular). For efficient 3D ViT training and inference, NeuroVFM expects **FlashAttention-2 v2.6.3** built from source (including the fused dense/MLP and DropAddNorm kernels). FlashAttention-2 only supports recent NVIDIA GPUs with Tensor Cores; see the `flash-attn` README for exact GPU, CUDA, and PyTorch compatibility.
 
-Rationale: 
-The pattern of hemorrhage in the basal and perimesencephalic cisterns with 
-clot impinging on the cerebral aqueduct and early ventricular enlargement is
-highly concerning for evolving obstructive hydrocephalus and brainstem compromise.
-```
+## Training
+
+Code to reproduce the main experiments in our manuscript are provided under `training/`. We provide a cached dataset feature that allows users to initially preprocess their data using our pipeline and save them as `.pt` files for faster subsequent training. For more information, see `training/README.md.`
+
+## LICENSE
+
+Code is released under the MIT License. Model weights are provided under the CC-BY-NC-SA 4.0 LICENSE on HuggingFace; please request access with your institutional email.
+
