@@ -51,7 +51,7 @@ intepretation = interpret_findings(findings, clinical_context, api_key)
 
 ## Installation
 
-NeuroVFM is a standard Python package built on PyTorch. To install it, clone this repository and install with `pip` (editable or regular). For efficient 3D ViT training and inference, NeuroVFM expects **FlashAttention-2 v2.6.3** built from source (including the fused dense/MLP and DropAddNorm kernels). FlashAttention-2 only supports recent NVIDIA GPUs with Tensor Cores; see the `flash-attn` README for exact GPU, CUDA, and PyTorch compatibility.
+NeuroVFM is a standard Python package built on PyTorch (compiled with CUDA 12.4). To install it, clone this repository and install with `pip` (editable or regular). For efficient 3D ViT training and inference, NeuroVFM expects **FlashAttention-2 v2.6.3** built from source (including the fused dense/MLP and DropAddNorm kernels). FlashAttention-2 only supports recent NVIDIA GPUs with Tensor Cores; see the `flash-attn` README for exact GPU, CUDA, and PyTorch compatibility.
 
 ## Training
 
