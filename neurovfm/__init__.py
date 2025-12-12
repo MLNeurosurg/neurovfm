@@ -20,6 +20,7 @@ from .datasets import (
     StudyAwareBatchSampler,
     MultiViewCollator,
     ImageDataModule,
+    VisionInstructionDataModule,
 )
 
 # Models
@@ -30,12 +31,14 @@ from .models import (
     PatchEmbed,
     PositionalEncoding3DWrapper,
     MLP,
+    VisionLanguageModel,
 )
 
 # Training systems
 from .systems import (
     VisionPretrainingSystem,
     VisionClassificationSystem,
+    VisionInstructionTuningSystem,
 )
 
 # Inference pipelines
@@ -60,6 +63,7 @@ __all__ = [
     "StudyAwareBatchSampler",
     "MultiViewCollator",
     "ImageDataModule",
+    "VisionInstructionDataModule",
     # Models
     "VisionTransformer",
     "VisionPredictor",
@@ -67,9 +71,11 @@ __all__ = [
     "PatchEmbed",
     "PositionalEncoding3DWrapper",
     "MLP",
+    "VisionLanguageModel",
     # Systems
     "VisionPretrainingSystem",
     "VisionClassificationSystem",
+    "VisionInstructionTuningSystem",
     # Pipelines
     "load_encoder",
     "load_diagnostic_head",

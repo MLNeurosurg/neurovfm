@@ -50,6 +50,7 @@ class ImageDataset(Dataset):
         use_original_labels: bool = True,
         class_to_idx: Optional[Dict] = None,
         study_labels: Optional[Dict[str, Union[int, float, List]]] = None,
+        study_conversations: Optional[Union[Dict[str, List[Dict]], str, Path]] = None,
     ):
         """
         Initialize ImageDataset.
@@ -80,6 +81,15 @@ class ImageDataset(Dataset):
                          
                          JSON/dict format (for single label):
                          {"study_001": 0, "study_002": 1, ...}
+            study_conversations: 
+                        Optional path to JSON or dict with study-level conversation turns [{role, content}, ...]. Used for visual instruction tuning.
+                         Example JSON:
+                         {
+                             "study_001": [
+                                 {"role": "user", "content": "Describe the image."},
+                                 {"role": "assistant", "content": "1. ... 2. ..."}
+                             ],
+                         }
         """
         self.data_dir = Path(data_dir)
         self.use_cache = use_cache
@@ -110,6 +120,7 @@ class ImageDataset(Dataset):
         # Load study-level labels from file, DataFrame, or dict
         self.study_labels = {}
         self.label_columns = None  # Track label column names for multilabel
+        self.study_conversations = {}
         
         if study_labels is None:
             pass  # Empty labels (for pretraining)
@@ -136,6 +147,27 @@ class ImageDataset(Dataset):
             self.study_labels = study_labels
         else:
             raise ValueError(f"study_labels must be a path, DataFrame, or dict, got {type(study_labels)}")
+        
+        # Load study-level conversations (optional, for visual instruction tuning)
+        if study_conversations is None:
+            self.study_conversations = {}
+        elif isinstance(study_conversations, (str, Path)):
+            conv_path = Path(study_conversations)
+            if not conv_path.exists():
+                logging.warning(f"Study conversations file not found: {conv_path}, using empty conversations")
+                self.study_conversations = {}
+            elif conv_path.suffix == '.json':
+                with open(conv_path, 'r') as f:
+                    self.study_conversations = json.load(f)
+                logging.info(f"Loaded study conversations from JSON {conv_path}: {len(self.study_conversations)} studies")
+            else:
+                raise ValueError(f"Unsupported conversation file format: {conv_path.suffix}. Use .json")
+        elif isinstance(study_conversations, dict):
+            self.study_conversations = study_conversations
+        else:
+            raise ValueError(
+                f"study_conversations must be a path or dict, got {type(study_conversations)}"
+            )
         
         # Load metadata
         metadata_file = self.data_dir / 'metadata.json'
@@ -320,13 +352,14 @@ class ImageDataset(Dataset):
         
         # Build output
         output = {
+            'study': study_name,
             'img': img_tokens.float(),  # [N, 1024]
             'coords': coords,  # [N, 3]
             'filtered': filt.to(torch.uint8),  # [N]
             'size': torch.tensor([inst_depth, inst_height, inst_width], dtype=torch.int32),
             'path': f"{study_name}/{image_name}",
             'label': self._process_label(label),
-            'study': study_name,
+            'conversation': self.study_conversations.get(study_name, []),
             'mode': mode,
             'window': sampled_window
         }
@@ -542,7 +575,8 @@ class ImageDataset(Dataset):
             'label': -1,
             'study': 'error',
             'mode': 'error',
-            'window': None
+            'window': None,
+            'conversation': [],
         }
 
 

@@ -90,7 +90,7 @@ class SelfAttention(nn.Module):
         attn_drop=0.0,
     ):
         super().__init__()
-        factory_kwargs = {'device': 'cuda', 'dtype': torch.bfloat16}
+        factory_kwargs = {'device': 'cpu', 'dtype': torch.bfloat16}
 
         self.dim_head = dim_head
         self.num_heads = num_heads
@@ -210,7 +210,7 @@ class CrossAttention(nn.Module):
         attn_drop=0.0,
     ):
         super().__init__()
-        factory_kwargs = {'device': 'cuda', 'dtype': torch.bfloat16}
+        factory_kwargs = {'device': 'cpu', 'dtype': torch.bfloat16}
 
         self.dim_head = dim_head
         self.num_heads = num_heads

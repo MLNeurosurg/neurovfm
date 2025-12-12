@@ -31,7 +31,7 @@ from neurovfm.models.vit import get_vit_backbone
 
 
 class ShortReport(BaseModel):
-    # JSON schema for report generation
+    # JSON schema for findings generation
     exam_type: str = Field(..., description="The type of imaging study.")
     findings: List[str] = Field(..., description="A list of key radiological findings.")
 
@@ -46,6 +46,7 @@ class LanguageModel(nn.Module):
             model_name_or_path: str, 
             use_gradient_checkpointing: bool = False,
             lora_params: Optional[Dict[str, Any]] = None,
+            attn_implementation: str = "flash_attention_2",
     ):
         super().__init__()
 
@@ -59,7 +60,7 @@ class LanguageModel(nn.Module):
             trust_remote_code=True,
             torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True,
-            attn_implementation="flash_attention_2",
+            attn_implementation=attn_implementation,
         )
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name_or_path,
@@ -508,15 +509,17 @@ class VisionLanguageModel(nn.Module):
             backbone_cf=vision_encoder_cf,
             use_gradient_checkpointing=use_gradient_checkpointing,
             freeze=True,
-        )
+        ).to(torch.bfloat16)
         self.visual_embed_dim = self.vision_encoder.embed_dim
         
         # initialize language model
+        attn_impl = language_model_cf.get("attn_implementation", "flash_attention_2")
         self.language_model = LanguageModel(
             model_name_or_path=language_model_cf['model_name_or_path'],
             use_gradient_checkpointing=use_gradient_checkpointing,
             lora_params=language_model_cf.get('lora_params', None), # optional LoRA parameters; if None, finetunes entire LLM
-        )
+            attn_implementation=attn_impl,
+        ).to(torch.bfloat16)
         llm_dim = self.language_model.hidden_size
         
         # initialize vision connector
@@ -527,7 +530,7 @@ class VisionLanguageModel(nn.Module):
             perceiver_cfg=cfg.get('perceiver_cfg', cfg),
             mlp_hidden_dim=vision_connector_cf.get('mlp_hidden_dim'),
             mlp_drop=vision_connector_cf.get('mlp_drop', 0.0),
-        )
+        ).to(torch.bfloat16)
         
     
     def forward(
@@ -536,8 +539,7 @@ class VisionLanguageModel(nn.Module):
         input_ids: Optional[torch.Tensor],
         attention_mask: Optional[torch.Tensor],
         labels: Optional[torch.Tensor] = None,
-        generation_mode: bool = False,
-        **generate_kwargs,
+        **kwargs,
     ) -> Union[Dict[str, torch.Tensor], torch.Tensor]:
         """
         Forward pass for training or generation.
@@ -547,19 +549,10 @@ class VisionLanguageModel(nn.Module):
             input_ids (Tensor): Tokenized input ids (B, S)
             attention_mask (Tensor): Attention mask (B, S)
             labels (Tensor, optional): Labels for training (B, S)
-            generation_mode (bool): If True, perform autoregressive generation
-            **generate_kwargs: Additional generation arguments
         
         Returns:
             CausalLMOutputWithPast for training, or generated ids for inference
         """
-        if generation_mode:
-            return self.generate(
-                vision_batch=vision_batch,
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                **generate_kwargs,
-            )
         
         # 1. get projected visual embeddings
         vision_output = self._forward_vision(vision_batch)
@@ -603,7 +596,6 @@ class VisionLanguageModel(nn.Module):
         Returns:
             Generated token ids or dict with hidden states if requested
         """
-        generate_with_hidden_states = generate_kwargs.pop('generate_with_hidden_states', False)
         
         # 1. get projected visual embeddings
         vision_output = self._forward_vision(vision_batch)
@@ -624,7 +616,6 @@ class VisionLanguageModel(nn.Module):
         return self._forward_generate(
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
-            generate_with_hidden_states=generate_with_hidden_states,
             **generate_kwargs,
         )
     
@@ -663,13 +654,11 @@ class VisionLanguageModel(nn.Module):
 
             placeholder_indices = (input_ids[i] == self.language_model.image_placeholder_token_id).nonzero(as_tuple=True)[0]
 
-            if len(placeholder_indices) < len(visual_token_chunks):
-                logging.warning(f"Found {len(placeholder_indices)} placeholders but {len(visual_token_chunks)} visual chunks for sample {i}. Truncating visual chunks.")
-                visual_token_chunks = visual_token_chunks[:len(placeholder_indices)]
-            elif len(placeholder_indices) > len(visual_token_chunks):
+            if len(placeholder_indices) != len(visual_token_chunks):
                 raise ValueError(
-                    f"Found {len(placeholder_indices)} placeholders but only "
-                    f"{len(visual_token_chunks)} visual chunks for sample {i}."
+                    f"Mismatch between number of image placeholders and image chunks for sample {i}.",
+                    f"Number of image placeholders: {len(placeholder_indices)}",
+                    f"Number of image chunks: {len(visual_token_chunks)}",
                 )
             
             spliced_embeds_parts, spliced_mask_parts = [], []
@@ -743,83 +732,15 @@ class VisionLanguageModel(nn.Module):
         self,
         inputs_embeds,
         attention_mask,
-        generate_with_hidden_states=False,
         **generate_kwargs
     ):
         """Forward pass for generation."""
-        if not generate_with_hidden_states:
-            return self.language_model.generate(
-                inputs_embeds=inputs_embeds,
-                attention_mask=attention_mask,
-                **generate_kwargs
-            )
-        else:
-            # return hidden states along with generated ids
-            assert inputs_embeds.shape[0] == 1, "batch size must be 1 for hidden state generation"
-            
-            generate_kwargs.update({
-                'output_hidden_states': True,
-                'return_dict_in_generate': True,
-                'output_scores': True
-            })
-            
-            outputs = self.language_model.generate(
-                inputs_embeds=inputs_embeds,
-                attention_mask=attention_mask,
-                **generate_kwargs
-            )
-            
-            generated_ids = outputs.sequences
-            sequences_scores = outputs.sequences_scores if 'sequences_scores' in outputs else None
-            
-            # process hidden states
-            generated_token_hidden_states = []
-            if 'hidden_states' in outputs:
-                for t in range(len(outputs.hidden_states)):
-                    step_hidden_states = outputs.hidden_states[t]
-                    last_layer_hidden_state = step_hidden_states[-1]
-                    token_hidden_state = last_layer_hidden_state[:, -1, :]
-                    generated_token_hidden_states.append(token_hidden_state.unsqueeze(1))
-            
-            if generated_token_hidden_states:
-                final_hidden_states = torch.cat(generated_token_hidden_states, dim=1)
-            else:
-                final_hidden_states = torch.empty(
-                    inputs_embeds.shape[0], 0, inputs_embeds.shape[2],
-                    device=inputs_embeds.device, dtype=inputs_embeds.dtype
-                )
-            
-            # reshape outputs by prompt
-            batch_size = inputs_embeds.shape[0]
-            num_beams = generate_kwargs.get('num_beams', 1)
-            num_generated_tokens = final_hidden_states.shape[1]
-            
-            reshaped_ids = generated_ids.view(batch_size, num_beams, -1)
-            reshaped_hidden_states = final_hidden_states.view(
-                batch_size, num_beams, num_generated_tokens, -1
-            )
-            reshaped_scores = sequences_scores.view(batch_size, num_beams) if sequences_scores is not None else None
-            
-            # extract top results and remove padding
-            top_generated_ids = reshaped_ids[0, 0, :]
-            top_hidden_states = reshaped_hidden_states[0, 0, :, :]
-            pad_indices = (top_generated_ids == self.language_model.tokenizer.pad_token_id).nonzero(as_tuple=True)[0]
-            
-            if len(pad_indices) > 0:
-                first_pad_idx = pad_indices[0].item()
-                top_generated_ids = top_generated_ids[:first_pad_idx]
-                top_hidden_states = top_hidden_states[:first_pad_idx]
-            
-            top_score = reshaped_scores[0, 0] if reshaped_scores is not None else None
-            
-            return {
-                "all_generated_ids": reshaped_ids,
-                "all_hidden_states": reshaped_hidden_states,
-                "all_scores": reshaped_scores,
-                "top_generated_ids": top_generated_ids,
-                "top_hidden_states": top_hidden_states,
-                "top_score": top_score,
-            }
+        
+        return self.language_model.generate(
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            **generate_kwargs
+        )
     
 
     def _forward_vision(
@@ -838,6 +759,7 @@ class VisionLanguageModel(nn.Module):
         visual_tokens, visual_coords = self.vision_encoder(vision_batch)
 
         # need to create a series_cu_seqlens_list, where each tensor in the list is the cumulative lengths of the series for a given study
+        # this is used by the vision connector to apply perceiver in a series-wise manner
         # example:
         # study_cu_seqlens = [0, 1000, 2000, 3000]
         # series_cu_seqlens = [0, 250, 1000, 1250, 1500, 2000, 2500, 3000]
@@ -933,73 +855,3 @@ class VisionLanguageModel(nn.Module):
         labels_new = None
         
         return input_ids_new, attention_mask_new, labels_new, generation_texts
-    
-
-    def set_training_stage(self, stage: str):
-        """
-        Configure trainable components for different training stages.
-        
-        Args:
-            stage (str): One of 'pretrain' or 'finetune'
-                - pretrain: Train connector only, freeze encoder and LLM
-                - finetune: Train connector and LLM (with optional LoRA)
-        """
-        # vision encoder is always frozen
-        if self.vision_encoder is not None:
-            for param in self.vision_encoder.parameters():
-                param.requires_grad = False
-        
-        if stage == "pretrain":
-            # stage 1: train projection components only
-            for param in self.vision_connector.parameters():
-                param.requires_grad = True
-            
-            for param in self.language_model.parameters():
-                param.requires_grad = False
-        
-        elif stage == "finetune":
-            # stage 2: train connector + language model
-            for param in self.vision_connector.parameters():
-                param.requires_grad = True
-            
-            if self.language_model.lora_params:
-                # lora is configured in language model __init__
-                pass
-            else:
-                for param in self.language_model.parameters():
-                    param.requires_grad = True
-        
-        else:
-            raise ValueError(f"Unknown training stage: {stage}")
-    
-
-    def log_trainable_parameters(self):
-        """Log parameter counts by component."""
-        total_params = 0
-        trainable_params = 0
-        
-        component_params = {}
-        if self.language_model is not None:
-            lm_params = sum(p.numel() for p in self.language_model.parameters())
-            component_params['language_model'] = lm_params
-        if self.vision_encoder is not None:
-            ve_params = sum(p.numel() for p in self.vision_encoder.parameters())
-            component_params['vision_encoder'] = ve_params
-        if self.vision_connector is not None:
-            vc_params = sum(p.numel() for p in self.vision_connector.parameters())
-            component_params['vision_connector'] = vc_params
-        
-        for name, param in self.named_parameters():
-            total_params += param.numel()
-            if param.requires_grad:
-                trainable_params += param.numel()
-        
-        logging.info("-" * 60)
-        logging.info("NeuroLlavaModel Parameter Summary:")
-        logging.info(f"  Total parameters: {total_params:,}")
-        for component, count in component_params.items():
-            logging.info(f"    - {component}: {count:,}")
-        logging.info(f"  Trainable parameters: {trainable_params:,}")
-        logging.info(f"  Frozen parameters: {total_params - trainable_params:,}")
-        logging.info(f"  Trainable percentage: {100 * trainable_params / total_params:.1f}%")
-        logging.info("-" * 60)

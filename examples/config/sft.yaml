@@ -1,0 +1,173 @@
+infra:
+  exp_root: /path/to/experiments/sft
+  seed: 42
+  num_gpus: 8
+  num_nodes: 1
+  log_gpu: false
+  log_every_n_steps: 50
+  # wandb_project:
+  comment: sft_test
+
+data:
+  # Root directory that contains `metadata.json` and a `raw/` subdirectory.
+  # The `raw/` directory should contain one subdirectory per study; each study
+  # directory can contain your 4 NIfTI files.
+  #
+  # Example layout (you may need to create `raw/` and symlink your data):
+  #   /path/to/data_root/
+  #     ├── metadata.json
+  #     └── raw/
+  #         ├── study_001/
+  #         ├── study_002/
+  #         └── ...
+  data_dir: /path/to/data_root/
+
+  # For initial sanity checks, avoid relying on the cache and read from raw.
+  use_cache: true
+  fallback_to_raw: false
+
+  # Path to JSON with study-level conversations 
+  # (e.g. [{"role": "user", "content": "Describe the image."}, {"role": "assistant", "content": "1. ... 2. ..."}])
+  study_conversations: /path/to/study_conversations.json
+
+  dataset:
+    train:
+      params:
+        mode_filter: mri
+        random_crop: false
+        max_crop_size: [36, 240, 240]   # D, H, W in tokens
+        augment: false
+        tokenize: true
+        ct_window_probs: [0.7, 0.15, 0.15]
+
+    val:
+      params:
+        mode_filter: mri
+        random_crop: false
+        augment: false
+        tokenize: true
+        ct_window_probs: [0.7, 0.15, 0.15]
+
+  loader:
+    train:
+      batch_size: 8
+      num_workers: 8
+      shuffle: true
+      drop_last: true
+      use_study_sampler: true
+      collate_fn:
+        remove_background: true
+        patch_drop_rate: 0.1
+        apply_masks_internally: false
+
+    val:
+      batch_size: 8
+      num_workers: 8
+      shuffle: false
+      drop_last: false
+      use_study_sampler: true
+      collate_fn:
+        remove_background: true
+        patch_drop_rate: 0.0
+        apply_masks_internally: false
+
+system:
+  which: VisionInstructionTuningSystem
+  params:
+    stage: s1_pretrain
+
+    # Optional: load full VLM pretrained weights
+    # if this is set, vision_encoder_cf, vision_connector_cf, and language_model_cf are ignored
+    # load_pretrained_full:
+    #   model_name_or_path: mlins/neurovfm-llm
+
+    # Optional: load pretrained weights just for the visual backbone
+    # if this is set, vision_encoder_cf is ignored
+    # load_pretrained_backbone:
+    #   model_name_or_path: mlins/neurovfm-encoder
+
+    # Vision encoder
+    vision_encoder_cf:
+      which: vit
+      params:
+        embed_dim: 768
+        depth: 12
+        num_heads: 12
+        prefix_len: 0
+        embed_layer_cf:
+          which: voxel
+          params:
+            in_chans: 1
+            embed_dim: 738
+            bias: true
+            fused_bias_fc: true
+            patch_hw_size: 16
+            patch_d_size: 4
+
+        pos_emb_cf:
+          which: pe3d
+          params:
+            in_dim: 738
+            d: 30
+            d_size: 128
+            hw_size: 192
+            pe_factor: 1
+            concat: true
+
+    # Vision connector
+    vision_connector_cf:
+      serie_perceiver:
+        perceiver_cfg:
+          num_queries: 64
+          num_layers: 6
+          num_heads: 8
+          dropout: 0.0
+      mlp_hidden_dim: null
+      mlp_drop: 0.0
+
+    # Language model
+    language_model_cf:
+      model_name_or_path: "Qwen/Qwen3-8B"
+      max_seq_len: 3072
+      system_prompt: "You are an expert neuro-radiologist AI assistant. Analyze the provided neuroimaging study and answer the user's request. /no_think"
+      lora_params: null
+      generate_kwargs:
+        max_new_tokens: 512
+        do_sample: false
+        num_beams: 4
+        length_penalty: 1.0
+        repetition_penalty: 1.2
+        no_repeat_ngram_size: 4
+        min_new_tokens: 3
+
+    # Optimizer
+    opt_cf:
+      which: adamw
+      scale_lr: false
+      params:
+        lr: 2e-5
+        start_lr: 2e-6
+        final_lr: 2e-9
+        betas: [0.9, 0.999]
+        weight_decay: 0.0
+        amsgrad: false
+    
+    # Scheduler
+    schd_cf:
+      which: cos_linear_warmup
+      params:
+        num_warmup_steps: 0.03
+        num_cycles: 1.0
+        ipe_scale: 1.0
+
+    # Optional: custom normalization stats (leave empty to use defaults)
+    # normalization_stats_list:
+    #   - [0.3141, 0.4139, 0.3184, 0.2719]  # means: mri, brain, blood, bone
+    #   - [0.2623, 0.4059, 0.3605, 0.1875]  # stds: mri, brain, blood, bone
+
+training:
+  trainer_params:
+    max_epochs: 1
+    gradient_clip_val: 1.0
+    accumulate_grad_batches: 8
+    precision: bf16-mixed

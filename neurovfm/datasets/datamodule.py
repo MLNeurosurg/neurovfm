@@ -13,7 +13,8 @@ import pytorch_lightning as pl
 from pathlib import Path
 from torch.utils.data import DataLoader
 from omegaconf import OmegaConf
-from typing import Optional
+from typing import Optional, Dict, Any, List, Union
+import json
 
 from neurovfm.data.metadata import DatasetMetadata
 from neurovfm.data.cache import CacheManager
@@ -290,4 +291,124 @@ class ImageDataModule(pl.LightningDataModule):
         
         logging.info(f"Val dataloader params: {loader_params}")
         return DataLoader(self.val_dataset, **loader_params)
+
+
+from neurovfm.data.text import process_text
+
+class VisionInstructionDataModule(pl.LightningDataModule):
+    """
+    Decorator datamodule for visual instruction tuning.
+
+    Wraps an existing ImageDataModule and augments its collate_fn with text processing based on study conversations.    
+    Text tensors are left-padded to the max length in the batch (pad_token_id for input_ids, 0 for attention_mask, -100 for labels).
+    """
+
+    def __init__(
+        self,
+        base_dm: ImageDataModule,
+        tokenizer,
+        system_prompt: str,
+        max_seq_len: int,
+        placeholder_token_id: int,
+        pad_token_id: int, # tokenizer.pad_token_id
+    ):
+        super().__init__()
+        self.base_dm = base_dm
+        self.tokenizer = tokenizer
+        self.system_prompt = system_prompt
+        self.max_seq_len = max_seq_len
+        self.placeholder_token_id = placeholder_token_id
+        self.pad_token_id = pad_token_id
+
+    def setup(self, stage: Optional[str] = None):
+        self.base_dm.setup(stage)
+
+    def _build_text_collate_fn(self, base_collate):
+
+        def _collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+            # collect conversations from raw batch before vision collation
+            conv_map: Dict[str, List[Dict[str, str]]] = {}
+            for sample in batch:
+                study_id = sample.get("study") or sample.get("study_id")
+                if study_id is None:
+                    raise ValueError("Sample missing study identifier needed for text collation.")
+                conv = sample.get("conversation", [])
+                if len(conv) == 0:
+                    raise KeyError(f"No conversation data for study_id: {study_id}. Please check the study_conversations file.")
+                conv_map[study_id] = conv
+
+            # base collate function for vision data
+            vision_batch = base_collate(batch)
+
+            study_ids = vision_batch.get("study")
+            if study_ids is None:
+                raise ValueError("vision_batch missing 'study' for text collation.")
+            paths = vision_batch.get("path")
+            if paths is None:
+                raise ValueError("vision_batch missing 'path' for text collation.")
+
+            input_ids_list, attn_mask_list, labels_list = [], [], []
+
+            # tokenize text for each study
+            for i, study_id in enumerate(study_ids):
+                if study_id not in conv_map:
+                    raise KeyError(f"No conversation data for study_id: {study_id}. Please check the study_conversations file.")
+
+                n_images = len(paths[i])
+                conversation = conv_map[study_id]
+
+                processed = process_text(
+                    conversation=conversation,
+                    tokenizer=self.tokenizer,
+                    max_seq_len=self.max_seq_len,
+                    system_prompt=self.system_prompt,
+                    image_placeholder_token_id=self.placeholder_token_id,
+                    n_images=n_images,
+                )
+
+                input_ids_list.append(processed["input_ids"])
+                attn_mask_list.append(processed["attention_mask"])
+                labels_list.append(processed["labels"])
+
+            # left pad text tensors to max length in batch
+            # input_ids: pad_token_id
+            # attention_mask: 0
+            # labels: -100
+            max_len = max(len(ids) for ids in input_ids_list)
+
+            def _left_pad(seq, pad_value):
+                pad_amount = max_len - len(seq)
+                if pad_amount <= 0:
+                    return torch.tensor(seq, dtype=torch.long)
+                return torch.cat(
+                    [
+                        torch.full((pad_amount,), pad_value, dtype=torch.long),
+                        torch.tensor(seq, dtype=torch.long),
+                    ],
+                    dim=0,
+                )
+
+            vision_batch["input_ids"] = torch.stack(
+                [_left_pad(seq, self.pad_token_id) for seq in input_ids_list], dim=0
+            )
+            vision_batch["attention_mask"] = torch.stack(
+                [_left_pad(seq, 0) for seq in attn_mask_list], dim=0
+            )
+            vision_batch["labels"] = torch.stack(
+                [_left_pad(seq, -100) for seq in labels_list], dim=0
+            )
+
+            return vision_batch
+
+        return _collate
+
+    def _wrap_loader(self, dl: DataLoader) -> DataLoader:
+        dl.collate_fn = self._build_text_collate_fn(dl.collate_fn)
+        return dl
+
+    def train_dataloader(self):
+        return self._wrap_loader(self.base_dm.train_dataloader())
+
+    def val_dataloader(self):
+        return self._wrap_loader(self.base_dm.val_dataloader())
 

@@ -35,6 +35,9 @@ from .projector import (
     CustomSequential,
 )
 
+# Vision-Language Model
+from .vlm import VisionLanguageModel
+
 __all__ = [
     # Transformer components
     "SelfAttention",
@@ -55,4 +58,6 @@ __all__ = [
     "MLP",
     "CSyncBatchNorm",
     "CustomSequential",
+    # Vision-Language Model
+    "VisionLanguageModel",
 ]

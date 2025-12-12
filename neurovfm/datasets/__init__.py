@@ -10,7 +10,7 @@ ImageDataModule: PyTorch Lightning DataModule
 
 from .dataset import ImageDataset, StudyAwareBatchSampler
 from .collators import MultiViewCollator, MultiBlockCollator
-from .datamodule import ImageDataModule
+from .datamodule import ImageDataModule, VisionInstructionDataModule
 
 __all__ = [
     'ImageDataset',
@@ -18,5 +18,6 @@ __all__ = [
     'MultiViewCollator',
     'MultiBlockCollator',
     'ImageDataModule',
+    'VisionInstructionDataModule',
 ]
 

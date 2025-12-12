@@ -70,6 +70,7 @@ class MultiViewCollator:
                 - 'img': [N_total, 1024] concatenated images
                 - 'coords': [N_total, 3] concatenated coordinates
                 - 'filtered': [N_total] concatenated masks
+                - 'study': List[str] study identifiers
                 - 'label': [B] labels
                 - 'size': [B, 3] sizes
                 - 'path': List[str] paths
@@ -93,7 +94,7 @@ class MultiViewCollator:
 
         # Prepare data
         study_imgs, study_coords, study_filters, study_sizes, study_labels = [], [], [], [], []
-        series_paths, series_modes = [], []
+        series_paths, series_modes, study_ids = [], [], []
         
         for study_series in study_groups:
             study_imgs.append(torch.cat([s["img"] for s in study_series]))
@@ -101,6 +102,7 @@ class MultiViewCollator:
             study_filters.append(torch.cat([s["filtered"] for s in study_series]))
             study_sizes.append(torch.stack([s["size"] for s in study_series]))
             study_labels.append(study_series[0]['label'])
+            study_ids.append(study_series[0]['study'])
             
             series_paths.extend([s["path"] for s in study_series])
             series_modes.extend([s["mode"] for s in study_series])
@@ -116,6 +118,7 @@ class MultiViewCollator:
             'path': series_paths,
             'mode': series_modes,
             'size': torch.cat(study_sizes, dim=0),
+            'study': study_ids,
         }
         
         # Handle labels
