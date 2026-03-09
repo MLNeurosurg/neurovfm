@@ -1,0 +1,161 @@
+infra:
+  exp_root: /path/to/experiments/pretrain_vitb
+  seed: 42
+  num_gpus: 1
+  num_nodes: 1
+  log_gpu: false
+  log_every_n_steps: 250
+  # wandb_project:
+  comment: vit_base_pretrain_test
+
+data:
+  # Root directory that contains `metadata.json` and a `raw/` subdirectory.
+  # The `raw/` directory should contain one subdirectory per study; each study
+  # directory can contain your 4 NIfTI files.
+  #
+  # Example layout (you may need to create `raw/` and symlink your data):
+  #   /path/to/data_root/
+  #     ├── metadata.json
+  #     └── raw/
+  #         ├── study_001/
+  #         ├── study_002/
+  #         └── ...
+  data_dir: /path/to/data_root/
+
+  # For initial sanity checks, avoid relying on the cache and read from raw.
+  use_cache: true
+  fallback_to_raw: false
+
+  # Optional: path to CSV/JSON with study-level labels (not needed for pretraining)
+  # study_labels: /path/to/study_labels.csv
+
+  dataset:
+    train:
+      params:
+        mode_filter: mri         # your BraTS data are MRI
+        random_crop: false
+        max_crop_size: [36, 240, 240]   # D, H, W in tokens
+        augment: true
+        tokenize: true
+        ct_window_probs: [0.7, 0.15, 0.15]
+
+    val:
+      params:
+        mode_filter: mri
+        random_crop: false
+        augment: false
+        tokenize: true
+        ct_window_probs: [0.7, 0.15, 0.15]
+
+  loader:
+    train:
+      batch_size: 8
+      num_workers: 8
+      shuffle: true
+      drop_last: true
+      use_study_sampler: true
+      collate_fn:
+        remove_background: true
+        patch_drop_rate: 0.1
+        apply_masks_internally: false
+
+    val:
+      batch_size: 8
+      num_workers: 8
+      shuffle: false
+      drop_last: false
+      use_study_sampler: true
+      collate_fn:
+        remove_background: true
+        patch_drop_rate: 0.0
+        apply_masks_internally: false
+
+system:
+  which: VisionPretrainingSystem
+  params:
+    # Model hyperparameters for the Vol-JEPA pretraining network
+    model_hyperparams:
+      # Vision backbone: ViT-B
+      vision_backbone_cf:
+        which: vit_base
+        params:
+          token_dim: 1024  # 1 * 4 * 16 * 16
+          embed_layer_cf:
+            which: voxel
+            params:
+              patch_hw_size: 16
+              patch_d_size: 4
+              in_chans: 1
+              embed_dim: 738
+          pos_emb_cf:
+            which: pe3d
+            params:
+              d: 30
+              d_size: 128
+              hw_size: 192
+              concat: true
+
+      # Predictor on top of ViT-B encoder
+      predictor_cf:
+        vision_encoder_dim: 768
+        dim: 768
+        depth: 12
+        dim_head: 64
+        num_heads: 12
+        prefix_len: 0
+        mlp_ratio: 4.0
+        qkv_bias: true
+        pos_emb_cf:
+          which: pe3d
+          params:
+            d: 30
+            d_size: 128
+            hw_size: 192
+            pe_factor: 1
+            concat: True
+
+    # EMA momentum schedule
+    ema_beta: [0.994, 1.0]
+
+    # Optimizer
+    opt_cf:
+      which: adamw
+      scale_lr: false
+      params:
+        lr: 3.75e-4
+        start_lr: 1.0e-4
+        final_lr: 1.0e-6
+        betas: [0.9, 0.999]
+        eps: 1.0e-8
+        weight_decay: 0.05
+        amsgrad: false
+    
+    # Scheduler
+    schd_cf:
+      which: cos_linear_warmup
+      params:
+        num_warmup_steps: 0.1
+        num_cycles: 0.5
+        ipe_scale: 1.25
+
+    # Optional: custom normalization stats (leave empty to use defaults)
+    # normalization_stats_list:
+    #   - [0.3141, 0.4139, 0.3184, 0.2719]  # means: mri, brain, blood, bone
+    #   - [0.2623, 0.4059, 0.3605, 0.1875]  # stds: mri, brain, blood, bone
+
+    num_mask_generators: 1
+
+training:
+  trainer_params:
+    max_epochs: 100
+    gradient_clip_val: 1.0
+    accumulate_grad_batches: 1
+    precision: bf16-mixed
+
+  # Monitor JEPA validation loss
+  monitor_metric: val/jepa_total_epoch
+  monitor_mode: min
+  checkpoint_every_n_epochs: 10
+
+  # Optional: resume from checkpoint
+  # resume_checkpoint: /path/to/pretraining_checkpoint.ckpt

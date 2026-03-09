@@ -2,11 +2,15 @@
 
 ## Health system learning achieves generalist neuroimaging models
 
-[**Preprint**](https://arxiv.org/abs/2511.18640) / [**Interactive Demo**](https://neurovfm.mlins.org) / [**Models**](https://huggingface.co/collections/mlinslab/neurovfm) / [**MLiNS Lab**](https://mlins.org)
+[**Paper**](https://arxiv.org/abs/2511.18640) / [**Interactive Demo**](https://neurovfm.mlins.org) / [**Models**](https://huggingface.co/collections/mlinslab/neurovfm) / [**MLiNS Lab**](https://mlins.org)
 
-**NeuroVFM** is a health system–scale, volumetric foundation model for multimodal neuroimaging, trained with self-supervision on **5.24M** MRI/CT volumes (**567k** studies) spanning **20+ years** of routine clinical care at Michigan Medicine. 
+**NeuroVFM** is a volumetric foundation model for multimodal neuroimaging, trained with self-supervision on **5.24M** MRI/CT volumes (**567k** studies) spanning **20+ years** of routine clinical care at Michigan Medicine.
+
+> **Research use only.** Not a medical device. Do not use for clinical decision-making.
 
 ![NeuroVFM overview](figures/MainFig1.png)
+
+---
 
 The NeuroVFM stack includes:
 
@@ -15,49 +19,91 @@ The NeuroVFM stack includes:
 - **Findings LLM**, generates preliminary findings given *any* neuroimaging study plus clinical context
 - **Reasoning API**, pass outputs to a frontier reasoning model for higher-level tasks (e.g., triage)
 
-> **Research use only.** Not a medical device. Do not use for clinical decision-making.
+All pretrained models are hosted on [Hugging Face](https://huggingface.co/collections/mlinslab/neurovfm). Weights require access approval with an institutional email.
 
-## 🔎 TL;DR (what NeuroVFM gives you)
+---
 
-NeuroVFM's defining feature is a standalone `pipelines/` package, which processes raw NIfTI/DICOM files given a study directory and returns (1) diagnostic probabilities, (2) findings, and (3) interpretation from a frontier reasoning model. All NeuroVFM models are hosted on HuggingFace; please request access [here](https://huggingface.co/collections/mlinslab/neurovfm).
+## Quickstart
+
+### Installation
+
+```bash
+git clone https://github.com/MLNeurosurg/neurovfm.git
+cd neurovfm
+pip install -e .
+```
+
+[FlashAttention-2 v2.6.3](https://github.com/Dao-AILab/flash-attention) built from source is required for both training and inference (fused dense/MLP and DropAddNorm kernels must be enabled). See the flash-attn README for GPU, CUDA, and PyTorch compatibility.
+
+### Pipeline
 
 ```python
 from neurovfm.pipelines import load_encoder, load_diagnostic_head, load_vlm, interpret_findings
 
-# Load pretrained models from HuggingFace
 encoder, preprocessor = load_encoder("mlinslab/neurovfm-encoder")
 dx_head = load_diagnostic_head("mlinslab/neurovfm-dx-ct")
+generator, gen_preproc = load_vlm("mlinslab/neurovfm-llm")
 
-# Load and preprocess a study directory with 1+ DICOM/NIfTI files
 batch = preprocessor.load_study("/path/to/ct/study/", modality="ct")
 
-# Generate embeddings and predictions
-embeddings = encoder.embed(batch)
-predictions = dx_head.predict(embeddings, batch)
+embeddings = encoder.embed(batch)                   # [N_tokens, 768]
+predictions = dx_head.predict(embeddings, batch)    # [(label, prob, pred), ...]
 
-# Load findings LLM
-generator, preproc = load_vlm("mlinslab/neurovfm-llm")
-vols = preproc.load_study("/path/to/study/")
+vols = gen_preproc.load_study("/path/to/ct/study/", modality="ct")
+findings = generator.generate(vols, clinical_context="LOC and nausea.")
 
-# clinical_context = "LOC and nausea."                  # optional clinical context
-clinical_context = None
-
-findings = generator.generate(vols, clinical_context)
-
-# optional: pass findings to external frontier LLM to interpret (e.g. clinical triage)
-api_key = "..." # requires API key (e.g., OpenAI) set in your environment
-intepretation = interpret_findings(findings, clinical_context, api_key)
+# (Optional) External reasoning model for triage
+triage = interpret_findings(findings, "LOC and nausea.", api_key="...")
 ```
 
-## Installation
+See `examples/` for complete runnable scripts for each stage.
 
-NeuroVFM is a standard Python package built on PyTorch (compiled with CUDA 12.4). To install it, clone this repository and install with `pip` (editable or regular). For efficient 3D ViT training and inference, NeuroVFM expects **FlashAttention-2 v2.6.3** built from source (including the fused dense/MLP and DropAddNorm kernels). FlashAttention-2 only supports recent NVIDIA GPUs with Tensor Cores; see the `flash-attn` README for exact GPU, CUDA, and PyTorch compatibility.
+---
 
 ## Training
 
-Code to reproduce the main experiments in our manuscript are provided under `training/`. We provide a cached dataset feature that allows users to initially preprocess their data using our pipeline and save them as `.pt` files for faster subsequent training. For more information, see `training/README.md.`
+Configs and reference scripts are provided for encoder pretraining (Vol-JEPA), diagnostic head training (MIL), and findings model fine-tuning (SFT). See [`neurovfm/train/README.md`](neurovfm/train/README.md) for details.
 
-## LICENSE
+---
 
-Code is released under the MIT License. Model weights are provided under the CC-BY-NC-SA 4.0 LICENSE on HuggingFace; please request access with your institutional email.
+## Repository structure
 
+```
+neurovfm/
+├── data/               # Data loading & preprocessing (NIfTI, DICOM, caching)
+├── datasets/           # PyTorch datasets, samplers, collators, data modules
+├── models/             # 3D ViT, MIL poolers, VLM, Perceiver connector
+├── systems/            # Lightning training: Vol-JEPA, classification, SFT
+├── pipelines/          # Inference APIs (encoder, diagnostic, VLM, triage)
+├── optim/              # Optimizers and LR schedulers
+├── train/              # Training scripts (Vol-JEPA pretraining, classification heads, LLM fine-tuning)
+examples/               # End-to-end example scripts
+```
+
+---
+
+## Projects using NeuroVFM
+
+<!-- Add publications that use NeuroVFM here. Format: citation + brief description + link. -->
+
+| Paper | Description | Link |
+|---|---|---|
+| Heras Rivera, Low, et al. "CoRe-BT: A Multimodal Radiology-Pathology-Text Benchmark for Robust Brain Tumor Typing." (2026) | Uses NeuroVFM encoder for MRI embeddings in multimodal brain tumor typing | [arXiv:2603.03618](https://arxiv.org/abs/2603.03618) |
+<!-- | Author et al. "Title." (Year) | Brief description | [Link]() | -->
+
+## License
+
+Code is released under the **MIT License**. Model weights are provided under **CC-BY-NC-SA 4.0** on [Hugging Face](https://huggingface.co/collections/mlinslab/neurovfm). Some weights require access approval with an institutional email.
+
+## Citation
+
+```bibtex
+@misc{kondepudi2025healthlearningachievesgeneralist,
+  title={Health system learning achieves generalist neuroimaging models},
+  author={Akhil Kondepudi and Akshay Rao and Chenhui Zhao and Yiwei Lyu and Samir Harake and Soumyanil Banerjee and Rushikesh Joshi and Anna-Katharina Meissner and Renly Hou and Cheng Jiang and Asadur Chowdury and Ashok Srinivasan and Brian Athey and Vikas Gulani and Aditya Pandey and Honglak Lee and Todd Hollon},
+  year={2025},
+  eprint={2511.18640},
+  archivePrefix={arXiv},
+  primaryClass={cs.CV},
+}
+```

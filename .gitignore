@@ -12,6 +12,8 @@ slurm*.out
 *.pt
 *.npy
 *.npz
+CLAUDE.md
+.claude/
 .ipynb_checkpoints
 lightning_logs/
 *bak
